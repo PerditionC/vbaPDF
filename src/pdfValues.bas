@@ -37,7 +37,8 @@ Function pdfValueObj(ByRef Value As Variant, Optional ByRef valueType As String 
                     obj.Value = Value
                 Case Else
                     obj.valueType = PDF_ValueType.PDF_String
-                    obj.Value = Value
+                    obj.Value = Value.id
+                    obj.generation = Value.generation
             End Select
         Case vbObject
             Select Case TypeName(Value)
@@ -52,6 +53,10 @@ Function pdfValueObj(ByRef Value As Variant, Optional ByRef valueType As String 
                         Case "/Trailer"
                             obj.valueType = PDF_ValueType.PDF_Trailer
                             Set obj.Value = Value
+                        Case "/Reference"
+                            obj.valueType = PDF_ValueType.PDF_Reference
+                            obj.Value = Value.id
+                            obj.generation = Value.generation
                         Case Else
                             Stop ' ???
                     End Select

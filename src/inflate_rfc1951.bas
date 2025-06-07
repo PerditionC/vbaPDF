@@ -203,7 +203,7 @@ Private Function buildHuffmanTree(ByRef lengths As Variant, ByRef minBitLen As I
             'If CLng(freq(ndx)) = curFreq Then
             If (CLng(lengths(ndx)) = curBitLength) And (curBitLength > 0) Then
                 ' right side of tree
-                Debug.Print ndx & "=" & Hex(curCode)
+                'Debug.Print ndx & "=" & Hex(curCode)
                 Set huffmanTree(ndx) = New huffmanCode
                 With huffmanTree(ndx)
                     .bitLen = curBitLength
@@ -272,10 +272,6 @@ End Sub
 
 ' initialize all our mapping tables
 Sub initializeStaticCodeTables()
-''' TODO move these
-    buildDistanceTree
-    buildLengthTree
-'''
     literalAndLenCodes = buildStaticHuffmanTree
     ' our codes are all 7,8, or 9 bits
     buildReverseHuffmanMapping mapLiteralAndLenHuffmanCodeToValue, literalAndLenCodes, 9
@@ -348,6 +344,7 @@ Function readInDynamicHuffmanTable(ByRef cbytes() As Byte, ByRef byteOffset As L
     ByRef mapDistanceHuffmanCodeToValue() As Integer, ByRef distanceHuffmanCodes() As huffmanCode, _
     ByRef distanceMinBits As Integer, ByRef distanceMaxBits As Integer _
 ) As Boolean
+    On Error GoTo errHandler
     '5 Bits: HLIT, # of Literal/Length codes - 257 (257 - 286)
     '5 Bits: HDIST, # of Distance codes - 1        (1 - 32)
     '4 Bits: HCLEN, # of Code Length codes - 4     (4 - 19)
@@ -362,7 +359,7 @@ Function readInDynamicHuffmanTable(ByRef cbytes() As Byte, ByRef byteOffset As L
     Dim order() As Variant
     order = Array(16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15)
     Dim codeLens() As Byte
-    ReDim codeLens(0 To countCodes)
+    ReDim codeLens(0 To 18) ' if countCodes < 18, indices at end of order array have codeLens(i) = 0
     Dim i As Integer
     For i = 0 To countCodes - 1
         codeLens(order(i)) = nBITS(3, cbytes, byteOffset, bitOffset)
@@ -387,6 +384,11 @@ Function readInDynamicHuffmanTable(ByRef cbytes() As Byte, ByRef byteOffset As L
     intializeDynamicCodeTables bitLengths, mapDistanceHuffmanCodeToValue, distanceHuffmanCodes, distanceMinBits, distanceMaxBits
     
     readInDynamicHuffmanTable = True
+    Exit Function
+errHandler:
+    Debug.Print Err.Description
+    Stop
+    Resume
 End Function
 
 Private Function readHuffmanValue(ByRef cbytes() As Byte, ByRef inputOffset As Long, ByRef bitOffset As Long, _
@@ -443,6 +445,8 @@ Private Function readBlockHeader(ByRef lastBlock As Boolean, ByRef blockComppres
     Exit Function
 errHandler:
     Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
+    Stop
+    Resume
 End Function
 
 
@@ -477,7 +481,8 @@ Private Function inflateData( _
 'Private mapLiteralAndLenHuffmanCodeToValue() As Integer ' index corresponds with huffman code and returns corresponding value for said code
 'Private DistanceTree(0 To 31) As CodeNode
 'Private LengthTree(0 To (285 - 257)) As CodeNode    ' (0 to 28)
-        
+    On Error GoTo errHandler
+    
     Dim endOfBlock As Boolean
     Do ' loop until we reach end of block code, 256
         'If outputOffset >= 69 Then Stop
@@ -528,6 +533,11 @@ Private Function inflateData( _
     'If outputOffset >= 19 Then Stop
     Loop Until endOfBlock
     inflateData = True
+    Exit Function
+errHandler:
+    Debug.Print Err.Description
+    Stop
+    Resume
 End Function
 
 
@@ -540,6 +550,16 @@ End Function
 ' Returns True if able to successfully decode data, False on any errors
 Public Function inflate2(ByRef cbytes() As Byte, ByRef oBytes() As Byte, ByRef inputOffset As Long, ByRef outputOffset As Long) As Boolean
     On Error GoTo errHandler
+    
+    ' if not allocated, then assume 4X compressed size (may need to increase, possibly up to 16X)
+    If UBound(oBytes) < LBound(oBytes) Then ReDim oBytes(0 To ((UBound(cbytes) - LBound(cbytes)) * 4) - 1)
+    
+''' intialize our constant trees, used by both static and dynamic huffman tree inflation
+    buildDistanceTree
+    buildLengthTree
+    initializeStaticCodeTables
+'''
+    
     
     ' see rfc1951
     Dim lastBlock As Boolean
@@ -561,9 +581,10 @@ Public Function inflate2(ByRef cbytes() As Byte, ByRef oBytes() As Byte, ByRef i
                 ' read LEN and NLEN (each is 2 bytes)
                 Dim copyLen As Long, negatedCopyLen As Long
                 copyLen = nBITS(16, cbytes, inputOffset, bitOffset)
-                negatedCopyLen = nBITS(16, cbytes, inputOffset, bitOffset)
-                If copyLen <> (Not negatedCopyLen) Then
+                negatedCopyLen = (Not nBITS(16, cbytes, inputOffset, bitOffset)) And &HFFFF&    ' limit to 16 bit value
+                If copyLen <> negatedCopyLen Then
                     Debug.Print "Error invalid uncompressed length value!"
+                    Stop
                     Exit Function
                 End If
                 ' copy LEN bytes of data to output
@@ -593,7 +614,7 @@ Public Function inflate2(ByRef cbytes() As Byte, ByRef oBytes() As Byte, ByRef i
                 End If
             Case ZlibCompressionType.FixedHuffmanCodes
                 ' use our precomputed fixed trees
-                initializeStaticCodeTables
+                'initializeStaticCodeTables  ' as these don't change move to earlier initialization phase
                 Dim dHuffmanCodeToValue() As Integer
                 Dim dHuffmanCodes() As huffmanCode
                 If Not inflateData(cbytes, oBytes, inputOffset, outputOffset, bitOffset, mapLiteralAndLenHuffmanCodeToValue, literalAndLenCodes, 7, 9, dHuffmanCodeToValue, dHuffmanCodes, 5, 5, distanceTree, lengthTree) Then
@@ -604,18 +625,22 @@ Public Function inflate2(ByRef cbytes() As Byte, ByRef oBytes() As Byte, ByRef i
                 Debug.Print "Error, invalid block compression type specified!"
                 Exit Function
         End Select
+        DoEvents
     Loop While Not lastBlock
     
     ReDim Preserve oBytes(0 To outputOffset - 1)
     inflate2 = True
+#If False Then ' debug output
     Dim x As Long
     For x = 0 To outputOffset - 1
         Debug.Print Hex(oBytes(x)) & " ";
     Next
     Debug.Print ""
+#End If
     Exit Function
 errHandler:
     Debug.Print "inflate_rfc1951.inflate() - " & Err.Description & " (" & Err.Number & ")"
+    Stop
     Resume
 End Function
 

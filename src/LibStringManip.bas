@@ -1,4 +1,4 @@
-Attribute VB_Name = "stringManip"
+Attribute VB_Name = "LibStringManip"
 ' basic String manipulations
 Option Explicit
 
@@ -118,7 +118,7 @@ Function TrimWS(ByVal str As String) As String
     If LenB(str) > 0 Then
 #If False Then
         ' if copying from a bulletted list, usually the bullet get added but is unwnated, so strip it too
-        ndx = Asc$(left$(str, 1))
+        ndx = Asc$(Left$(str, 1))
         If (i = 149) Or (i = 160) Then ' 149=bullet point, 160=non-breaking space
             str = Trim$(Mid$(str, 2))
         End If
@@ -146,7 +146,7 @@ Function TrimWS(ByVal str As String) As String
             DoEvents
         Loop
         If ndx > 0 Then
-            str = left$(str, ndx)
+            str = Left$(str, ndx)
         Else
             str = vbNullString
         End If

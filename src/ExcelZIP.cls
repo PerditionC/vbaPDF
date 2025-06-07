@@ -51,7 +51,7 @@ Private Type FileHeader
     uncompressedSize As Long
     nameLength As Integer
     extraFieldLength As Integer
-    fileName As String
+    filename As String
     dataStart As Long
     uncompressedData() As Byte
 End Type
@@ -103,11 +103,11 @@ Public Sub Init(ByVal zipPath As String)
             .uncompressedSize = ReadLong(i + 22)
             .nameLength = ReadInt(i + 26)
             .extraFieldLength = ReadInt(i + 28)
-            .fileName = StrConv(MidB$(m_sBytes, i + 31, .nameLength), vbUnicode)
+            .filename = StrConv(MidB$(m_sBytes, i + 31, .nameLength), vbUnicode)
             .dataStart = i + 30 + .nameLength + .extraFieldLength
             .uncompressedData = vbNullString
             i = .dataStart + .CompressedSize
-            m_fileIndex.Add j, .fileName
+            m_fileIndex.Add j, .filename
         End With
     Loop
 End Sub
@@ -128,15 +128,15 @@ End Function
 '*******************************************************************************
 'Utility - Reads a file into an array of Bytes
 '*******************************************************************************
-Private Sub ReadBytes(ByVal filePath As String, ByRef result() As Byte)
-    If Not IsFile(filePath) Then
+Private Sub ReadBytes(ByVal filepath As String, ByRef result() As Byte)
+    If Not IsFile(filepath) Then
         Erase result
         Exit Sub
     End If
     '
     Dim fileNumber As Long: fileNumber = FreeFile()
     '
-    Open filePath For Binary Access Read As #fileNumber
+    Open filepath For Binary Access Read As #fileNumber
     Dim Size As Long: Size = LOF(fileNumber)
     If Size > 0 Then
         ReDim result(0 To Size - 1)
@@ -146,9 +146,9 @@ Private Sub ReadBytes(ByVal filePath As String, ByRef result() As Byte)
     End If
     Close #fileNumber
 End Sub
-Private Function IsFile(ByVal filePath As String) As Boolean
+Private Function IsFile(ByVal filepath As String) As Boolean
     On Error Resume Next
-    IsFile = ((GetAttr(filePath) And vbDirectory) <> vbDirectory)
+    IsFile = ((GetAttr(filepath) And vbDirectory) <> vbDirectory)
     On Error GoTo 0
 End Function
 
@@ -173,7 +173,7 @@ Public Function GetFileNames() As String()
     '
     ReDim res(1 To m_fileIndex.Count)
     For i = 1 To m_fileIndex.Count
-        res(i) = m_fileHeaders(i).fileName
+        res(i) = m_fileHeaders(i).filename
     Next i
     GetFileNames = res
 End Function
@@ -181,9 +181,9 @@ End Function
 '*******************************************************************************
 'Checks if a file exists within the archive
 '*******************************************************************************
-Public Function HasFile(ByRef fileName As String) As Boolean
+Public Function HasFile(ByRef filename As String) As Boolean
     On Error Resume Next
-    m_fileIndex.Item fileName
+    m_fileIndex.Item filename
     HasFile = (Err.Number = 0)
     On Error GoTo 0
 End Function
@@ -191,22 +191,22 @@ End Function
 '*******************************************************************************
 'Returns the uncompressed data for the required file
 '*******************************************************************************
-Public Sub ReadData(ByVal fileName As String, ByRef result() As Byte)
-    If Not HasFile(fileName) Then
+Public Sub ReadData(ByVal filename As String, ByRef result() As Byte)
+    If Not HasFile(filename) Then
         Err.Raise 5, TypeName(Me) & ".ReadData", "File does not exist"
         Exit Sub
     End If
     '
-    With m_fileHeaders(m_fileIndex(fileName))
+    With m_fileHeaders(m_fileIndex(filename))
         If UBound(.uncompressedData) - LBound(.uncompressedData) + 1 = 0 Then
-            libdeflate_inflate m_bytes, .dataStart, .uncompressedData, .uncompressedSize
-            'If inflate2(m_bytes, .uncompressedData, .dataStart, .uncompressedSize) Then
+            'libdeflate_inflate m_bytes, .dataStart, .uncompressedData, .uncompressedSize
+            If inflate2(m_bytes, .uncompressedData, .dataStart, .uncompressedSize) Then
             If Crc32(.uncompressedData) <> .crc32uncompressed Then
                 Err.Raise 5, TypeName(Me) & ".ReadData", "Corrupted data"
             End If
             'Else
             '    Err.Raise 5, TypeName(Me) & ".ReadData", "Error inflating data"
-            'End If
+            End If
         End If
         result = .uncompressedData
     End With

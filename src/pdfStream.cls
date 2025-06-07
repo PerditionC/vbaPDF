@@ -17,8 +17,8 @@ Public stream_data As pdfValue ' PDF_StreamData
 Public Property Get Length() As Long
     ' Length is stored in meta
     ' it should be same as size of data
-    If Meta.Exists("/Length") Then
-        Length = CLng(Meta.Item("/Length"))
+    If meta.Exists("/Length") Then
+        Length = CLng(meta.Item("/Length"))
     End If
     
     On Error Resume Next
@@ -34,7 +34,7 @@ End Property
 
 ' this will add/update /Length property in meta and resize data()
 Public Property Let Length(ByVal Count As Long)
-    Meta("/Length") = Count ' add or replace
+    meta("/Length") = Count ' add or replace
     
     On Error Resume Next
     Dim dataLen As Long
@@ -53,12 +53,12 @@ Public Property Get data() As Byte()
 End Property
 
 ' returns meta data as a VBA Dictionary object
-Public Property Get Meta() As Dictionary
-    Set Meta = stream_meta.Value
+Public Property Get meta() As Dictionary
+    Set meta = stream_meta.Value
 End Property
 
-Public Sub Init(ByRef Meta As pdfValue, ByRef data As pdfValue)
-    Set stream_meta = Meta
+Public Sub Init(ByRef meta As pdfValue, ByRef data As pdfValue)
+    Set stream_meta = meta
     Set stream_data = data
 End Sub
 

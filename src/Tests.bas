@@ -11,20 +11,41 @@ Sub TestPdfCombine()
     CombinePDFs sources, basedir & "Combined.pdf"
 End Sub
 
+Sub TestHeaderAndVersion()
+    Dim pdfDoc As pdfDocument
+    Set pdfDoc = New pdfDocument
+    Debug.Print pdfDoc.Version
+    Set pdfDoc = New pdfDocument
+    Debug.Print "[" & pdfDoc.Header & "]"
+End Sub
+
 Sub TestReWritePdf()
     Const basedir As String = "C:\Users\jeremyd\Downloads\"
-    
+#If 0 Then
     Dim trailer As pdfValue
     Dim xrefTableOriginal As Dictionary
-    Dim info As pdfValue
+    Dim Info As pdfValue
     Dim root As pdfValue
     Dim pdfObjs As Dictionary
     
-    LoadPDF basedir & "test2.pdf", trailer, xrefTableOriginal, info, root, pdfObjs
+    loadPdf basedir & "test2.pdf", trailer, xrefTableOriginal, Info, root, pdfObjs
     
     Dim xrefTable As Dictionary
-    Set xrefTable = NewxrefTable()
-    SavePdf basedir & "rewritten.pdf", trailer, xrefTable, info, root, pdfObjs
+    Set xrefTable = NewXrefTable()
+    savePdf basedir & "rewritten.pdf", trailer, xrefTable, Info, root, pdfObjs
+#Else
+    Dim pdfDoc As pdfDocument
+    Set pdfDoc = New pdfDocument
+    If Not pdfDoc.loadPdf(basedir & "test2.pdf") Then
+        Debug.Print "Error loading " & pdfDoc.filename
+    End If
+    If Not pdfDoc.parsePdf() Then
+        Debug.Print "Error parsing pdf " & pdfDoc.filename
+    End If
+    If Not pdfDoc.savePdfAs(basedir & "rewritten.pdf") Then
+        Debug.Print "Error saving " & "rewritten.pdf"
+    End If
+#End If
 End Sub
 
 Sub TestZip()

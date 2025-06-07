@@ -285,7 +285,57 @@ Function HexStr(ByVal v As LongLong) As String
     If l >= 8 Then
         HexStr = s
     Else
-        HexStr = left(pad, 8 - Len(s)) & s
+        HexStr = Left(pad, 8 - Len(s)) & s
     End If
+End Function
+
+
+
+' reads in contents of filename returning as a Byte() array
+' fileLen is set to size in bytes of the file
+Function readFile(ByVal filename As String, ByRef fileLen As Long) As Byte()
+    On Error GoTo errHandler
+    Dim fileNum As Integer
+    Dim content() As Byte
+    
+    ' Open file and read content
+    fileNum = FreeFile
+    Open filename For Binary Access Read Shared As #fileNum
+    fileLen = LOF(fileNum)
+    ReDim content(fileLen - 1)
+    Get #fileNum, , content
+    
+cleanup:
+    On Error Resume Next
+    Close #fileNum
+    readFile = content
+    Exit Function
+errHandler:
+    Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
+    fileLen = 0
+    ReDim content(0)
+    Resume cleanup
+End Function
+
+
+' writes string to file as bytes and returns count of bytes written
+Function PutString(ByVal fileNum As Integer, ByRef str As String) As Long
+    Dim data() As Byte: data = StringToBytes(str)
+    PutString = PutBytes(fileNum, data)
+End Function
+
+
+' writes bytes to file and returns count of bytes written
+Function PutBytes(ByVal fileNum As Integer, ByRef data() As Byte) As Long
+    On Error GoTo errHandler
+    Dim byteCount As Long
+    byteCount = UBound(data) - LBound(data) + 1
+    Put #fileNum, , data
+    PutBytes = byteCount
+    Exit Function
+errHandler:
+    Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
+    Stop
+    Resume
 End Function
 
