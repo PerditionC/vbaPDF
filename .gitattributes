@@ -1,0 +1,9 @@
+* text eol=auto
+*.bat text eol=crlf
+*.sh text eol=lf
+.github/workflows/*.yml text eol=lf
+
+*.bas text eol=crlf
+*.cls text eol=crlf
+*.frm text eol=crlf
+*.xlsm binary diff
