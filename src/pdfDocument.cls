@@ -24,7 +24,7 @@ Public trailer As pdfValue      ' special pdf dictionary with references to key 
 
 ' similar information, meta is newer but either or both may be present
 Private m_Info As pdfValue
-Public meta As pdfValue
+Private m_Meta As pdfValue
 
 ' a PDF consists of a set of pages
 Private m_Pages As pdfValue
@@ -94,6 +94,11 @@ End Property
 
 
 ' get/set Info object; updates /Info in trailer
+' note: /Metadata is newer method and replaces /Info, however, both may exist
+' /Metadata stored in /Catalog dictionary in XML while /Info is dictionary object stored in /Trailer
+' Will first attempt to load from objectCache (parsePDF previously called)
+' otherwise attempts to parse directly from raw content() -- does not add to objectCache
+' Expects trailer object to already be set/loaded (e.g. by loadPDF)
 Public Property Set Info(ByRef Info As pdfValue)
     Set m_Info = Info
     
@@ -118,7 +123,102 @@ Public Property Set Info(ByRef Info As pdfValue)
     End If
 End Property
 Public Property Get Info() As pdfValue
+    If m_Info Is Nothing Then Set m_Info = New pdfValue
+    If m_Info.valueType = PDF_ValueType.PDF_Null Then
+        ' 1st try loading cached object, if that fails, try loading from raw content()
+        ' note: we Set m_Info instead of Me.Info as we are retrieving /Info id from trailer's reference object already
+    
+        ' get reference to /Info object (object itself should not be stored directly in trailer)
+        Dim infoRefObj As pdfValue: Set infoRefObj = GetInfo(trailer)
+        Dim infoId As Long: infoId = -1
+        If infoRefObj.valueType = PDF_ValueType.PDF_Reference Then
+            infoId = CLng(infoRefObj.Value)
+        'ElseIf info.valueType = PDF_ValueType.PDF_Object Then
+        End If
+        
+        If objectCache.Exists(infoId) Then
+            Set m_Info = objectCache.Item(infoId)
+        Else
+            'Set m_Info = GetInfoObject(content, trailer, xrefTable)
+            Set m_Info = getObject(content, xrefTable, infoId)
+            'objectCache.Add m_Info.id, m_Info
+        End If
+        Debug.Print BytesToString(m_Info.serialize())
+    End If
+
     Set Info = m_Info
+End Property
+
+
+' get/set Meta object; updates /Metadata in trailer
+' note: /Metadata is newer method and replaces /Info, however, both may exist
+' /Metadata stored in /Catalog dictionary in XML while /Info is dictionary object stored in /Trailer
+' Will first attempt to load from objectCache (parsePDF previously called)
+' otherwise attempts to parse directly from raw content() -- does not add to objectCache
+' Expects rootCatalog or trailer object to already be set/loaded (e.g. by loadPDF)
+Public Property Set Meta(ByRef Meta As pdfValue)
+    Set m_Meta = Meta
+
+    ' update /Info in trailer
+    If (Not rootCatalog Is Nothing) Then
+        Dim dict As Dictionary
+        Set dict = rootCatalog.asDictionary()
+        If Not dict Is Nothing Then
+            ' handle /Metadata is Nothing or pdf null value
+            Dim noMetaValue As Boolean  ' work around for VBA not having short circuit if
+            If m_Meta Is Nothing Then
+                noMetaValue = True
+            Else
+                noMetaValue = (m_Meta.valueType = PDF_ValueType.PDF_Null)
+            End If
+            If noMetaValue Then
+                If dict.Exists("/Metadata") Then
+                    dict.Remove ("/Metadata")
+                End If
+            Else
+                Set dict("/Metadata") = pdfValueObj(m_Meta, "/Reference")
+            End If
+        End If
+    End If
+End Property
+Public Property Get Meta() As pdfValue
+    If m_Meta Is Nothing Then Set m_Meta = New pdfValue
+    If m_Meta.valueType = PDF_ValueType.PDF_Null Then
+        ' /Metadata is part of rootCatalog dictionary
+        Dim catalogDict As Dictionary
+        ' has rootCatalog been established yet? if not attempt to get it
+        If rootCatalog.valueType = PDF_ValueType.PDF_Null Then
+            ' root obj of PDF
+            Dim root As pdfValue ' we are not loading rootCatalog here, user must explicity set themselves or call loadPDF
+            Set root = GetRootObject(content, trailer, xrefTable)
+            'Debug.Print BytesToString(root.serialize())
+            Set catalogDict = root.asDictionary()
+            Set root = Nothing
+        Else
+            Set catalogDict = rootCatalog.asDictionary()
+        End If
+        ' objtain reference to /Metadata object and get it
+        If Not catalogDict Is Nothing Then
+            If catalogDict.Exists("/Metadata") Then
+                Dim pdfRefObj As pdfValue
+                Set pdfRefObj = rootCatalog.asDictionary.Item("/Metadata")
+                ' 1st try loading cached object, if that fails, try loading from raw content()
+                If objectCache.Exists(CLng(pdfRefObj.Value)) Then
+                    Set m_Meta = objectCache.Item(CLng(pdfRefObj.Value))
+                Else
+                    Set m_Meta = getObject(content, xrefTable, pdfRefObj.Value)
+                End If
+                Debug.Print BytesToString(m_Meta.serialize())
+                'objectCache.Add m_Meta.id, m_Meta
+            Else
+                Debug.Print "No /Metadata object specified in root /Catalog"
+            End If
+        Else
+            Debug.Print "No root /Catalog found, no /Metadata object"
+        End If
+    End If
+
+    Set Meta = m_Meta
 End Property
 
 
@@ -128,12 +228,11 @@ Public Property Set pages(ByRef pages As pdfValue)
 End Property
 Public Property Get pages() As pdfValue
     On Error GoTo errHandler
-    If m_Pages Is Nothing Then
+    If m_Pages Is Nothing Then Set m_Pages = New pdfValue
+    If m_Pages.valueType = PDF_ValueType.PDF_Null Then
         ' find /Pages reference in /Root catalog and returns corresponding object from pdf or objectCache Dictionary
-        Dim obj As pdfValue
-        Dim dict As Dictionary
-        Set dict = obj.Value
         If rootCatalog.asDictionary.Exists("/Pages") Then ' /Pages in the catalog dictionary << >>
+            Dim obj As pdfValue
             Set obj = rootCatalog.asDictionary.Item("/Pages")
             ' obj should now be a reference to our /Pages object
             If obj.valueType = PDF_ValueType.PDF_Reference Then
@@ -161,15 +260,24 @@ End Property
 ' will first try to find in objectCache, then uses cross reference table to load from content,
 ' otherwise returns pdf null object
 Public Function getCachedObject(ByVal id As Long, ByVal generation As Long) As pdfValue
-    Dim obj As pdfValue
     Dim v As Variant
-    For Each v In objectCache.Items
-        Set obj = v
-        If obj.id = id And obj.generation = generation Then
-            Set getCachedObject = obj
-            Exit For
+    ' return object, but verify matches expected generation
+    If objectCache.Exists(id) Then
+        Set v = objectCache.Item(id)
+        If TypeName(v) = "pdfValue" Then
+            Set getCachedObject = v
+            If getCachedObject.generation = generation Then Exit Function
+        ElseIf TypeName(v) = "Dictionary" Then
+            ' assume may contain multiple generations, key'd by generation
+            If v.Exists(generation) Then
+                Set getCachedObject = v.Item(generation)
+                Exit Function
+            End If
+        Else
+            Debug.Print "Internal Error!"
+            Stop
         End If
-    Next v
+    End If
     ' fail to find so return null object
     Set getCachedObject = New pdfValue
 End Function
@@ -217,26 +325,28 @@ Public Function loadPdf(ByVal pdfFilename As String) As Boolean
     ' load the xref table
     Set xrefTable = GetXrefTable(content, trailer)
     
-    ' display info
-    Set Info = GetInfoObject(content, trailer, xrefTable)
-    Debug.Print BytesToString(Info.serialize())
-    objectCache.Add Info.id, Info
-    
     ' root obj of PDF
     Set rootCatalog = GetRootObject(content, trailer, xrefTable)
     Debug.Print BytesToString(rootCatalog.serialize())
     objectCache.Add rootCatalog.id, rootCatalog
     
+#If False Then  ' don't automatically obtain these here, see Info and Meta properties
     ' get metadata (replaces info but both may exist)
     If rootCatalog.asDictionary.Exists("/Metadata") Then
         Dim pdfRefObj As pdfValue
         Set pdfRefObj = rootCatalog.asDictionary.Item("/Metadata")
-        Set meta = getObject(content, xrefTable, pdfRefObj.Value)
-        Debug.Print BytesToString(meta.serialize())
-        objectCache.Add meta.id, meta
+        Set Meta = getObject(content, xrefTable, pdfRefObj.Value)
+        Debug.Print BytesToString(Meta.serialize())
+        objectCache.Add Meta.id, Meta
     Else
         Debug.Print "No /Metadata object specified in root /Catalog"
     End If
+    
+    ' display info
+    Set Info = GetInfoObject(content, trailer, xrefTable)
+    Debug.Print BytesToString(Info.serialize())
+    objectCache.Add Info.id, Info
+#End If
     
     loadPdf = True ' success
     Exit Function
@@ -252,6 +362,16 @@ End Function
 ' True on success, false on any error
 Public Function parsePdf() As Boolean
     GetObjectsInTree rootCatalog, content, xrefTable, objectCache
+    
+    ' /Info is in trailer, so won't be loaded as part of rootCatalog,
+    ' Note first call to Info actually retreives, so need to: Set Info = GetInfoObject(content, trailer, xrefTable)
+    objectCache.Add Info.id, Info
+    
+    ' /Metadata is in root catalog so should be in object cache, but not Me.meta yet, make any call to initalize it
+    If Meta.valueType <> PDF_ValueType.PDF_Null Then
+        'Debug.Print BytesToString(Meta.serialize())
+    End If
+    
     parsePdf = True ' success
 End Function
 
@@ -506,19 +626,32 @@ End Sub
 
 
 Private Sub Class_Initialize()
+    On Error GoTo errHandler
     Set objectCache = New Dictionary
     Set xrefTable = NewXrefTable()
     Set rootCatalog = New pdfValue
     Set trailer = NewTrailer()
     Set Info = New pdfValue
-    Set meta = New pdfValue
+    Set Meta = New pdfValue
+    Exit Sub
+errHandler:
+    Debug.Print Err.Description
+    Stop
+    Resume
 End Sub
 
 Private Sub Class_Terminate()
+    On Error GoTo errHandler
     Set objectCache = Nothing
     Set xrefTable = Nothing
     Set rootCatalog = Nothing
     Set trailer = Nothing
     Set m_Info = Nothing    ' don't set Info as we don't want to update trailer
-    Set meta = Nothing
+    Set Meta = Nothing
+    Erase content
+    Exit Sub
+errHandler:
+    Debug.Print Err.Description
+    Stop
+    Resume Next
 End Sub

@@ -21,31 +21,33 @@ End Sub
 
 Sub TestReWritePdf()
     Const basedir As String = "C:\Users\jeremyd\Downloads\"
-#If 0 Then
-    Dim trailer As pdfValue
-    Dim xrefTableOriginal As Dictionary
-    Dim Info As pdfValue
-    Dim root As pdfValue
-    Dim pdfObjs As Dictionary
     
-    loadPdf basedir & "test2.pdf", trailer, xrefTableOriginal, Info, root, pdfObjs
-    
-    Dim xrefTable As Dictionary
-    Set xrefTable = NewXrefTable()
-    savePdf basedir & "rewritten.pdf", trailer, xrefTable, Info, root, pdfObjs
-#Else
+    ' create VBA object to work with PDF document
     Dim pdfDoc As pdfDocument
     Set pdfDoc = New pdfDocument
+    
+    ' attempt to load PDF document, initializes trailer and rootCatalog but otherwise does not parse PDF objects contained in document
     If Not pdfDoc.loadPdf(basedir & "test2.pdf") Then
         Debug.Print "Error loading " & pdfDoc.filename
     End If
+    
+    ' without parsing whole document just get the metadata about this document
+    'Debug.Print BytesToString(pdfDoc.Info)
+    'Debug.Print BytesToString(pdfDoc.Meta)
+    
+    ' actually load all the pdf objects referenced from the root catalog (does not load orphan'd objects)
     If Not pdfDoc.parsePdf() Then
         Debug.Print "Error parsing pdf " & pdfDoc.filename
     End If
+    
+    ' since we've parse pdf, these should just quickly return cached (previously parsed) metadata objects
+    Debug.Print pdfDoc.Info.id
+    Debug.Print pdfDoc.Meta.id
+    
+    ' we didn't make any changes, but save as a new file for comparison - we don't support writing object stream objects nor any compression /Filters
     If Not pdfDoc.savePdfAs(basedir & "rewritten.pdf") Then
         Debug.Print "Error saving " & "rewritten.pdf"
     End If
-#End If
 End Sub
 
 Sub TestZip()
@@ -74,4 +76,20 @@ Sub TestZip()
         Debug.Print testFile & " is not in archive."
     End If
     Set zip = Nothing
+End Sub
+
+
+' simple function lets user select and order pdf files
+Sub TestOrderPDFs()
+    Dim files() As String
+    files = PickFiles()
+    Dim ufFileOrder As ufFileList: Set ufFileOrder = New ufFileList
+    ufFileOrder.list = files
+    ufFileOrder.Show
+    files = ufFileOrder.list
+    
+    Dim i As Long
+    For i = LBound(files) To UBound(files)
+        Debug.Print files(i)
+    Next i
 End Sub

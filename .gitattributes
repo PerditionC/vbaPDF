@@ -6,4 +6,5 @@
 *.bas text eol=crlf
 *.cls text eol=crlf
 *.frm text eol=crlf
-*.xlsm binary diff
+*.frx binary
+*.xlsm binary

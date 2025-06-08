@@ -25,9 +25,11 @@ Function isDictionaryObject() As Boolean
 End Function
 
 ' returns vba Dictionary instance contained in pdf dictionary
+' Warning: returns Nothing if object lacks dictionary to return
 Function asDictionary() As Dictionary
+    On Error GoTo errHandler
     If ((valueType = PDF_ValueType.PDF_Object) Or (valueType = PDF_ValueType.PDF_Dictionary) Or (valueType = PDF_ValueType.PDF_Trailer)) _
-    And (Not Value Is Nothing) Then
+    And (Not IsEmpty(Value)) Then
         Dim pdfDict As pdfValue
         If (valueType = PDF_ValueType.PDF_Dictionary) Then
             Set pdfDict = Me
@@ -36,6 +38,10 @@ Function asDictionary() As Dictionary
         End If
         Set asDictionary = pdfDict.Value
     End If
+    Exit Function
+errHandler:
+    Debug.Print Err.Description & " (" & Err.Number & ")"
+    Stop
 End Function
 
 

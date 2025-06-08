@@ -143,7 +143,7 @@ End Function
 ' returns a value loaded for a PDF
 ' updates offset to next non-whitespace byte after this value is loaded
 ' Note: meta is only used for stream object
-Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional meta As Dictionary = Nothing) As pdfValue
+Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional Meta As Dictionary = Nothing) As pdfValue
     On Error GoTo errHandler
     DoEvents
     Dim result As pdfValue: Set result = New pdfValue
@@ -277,16 +277,16 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional meta As 
             If Chr(bytes(offset)) = vbLf Then offset = offset + 1
             result.valueType = PDF_ValueType.PDF_StreamData
             Dim dataBytes() As Byte
-            If meta Is Nothing Then Set meta = New Dictionary
-            If meta.Exists("/Length") Then
+            If Meta Is Nothing Then Set Meta = New Dictionary
+            If Meta.Exists("/Length") Then
                 Dim byteLen As Long
-                If IsObject(meta.Item("/Length").Value) Then
+                If IsObject(Meta.Item("/Length").Value) Then
                     ' Reference to actual /Length value, allowed but not common
                     Stop
                     ' TODO pass we need Dictionary of loaded objects or xrefTable to load value
                 Else
                     ' /Length directly in file as number, usual
-                    byteLen = CLng(meta.Item("/Length").Value)
+                    byteLen = CLng(Meta.Item("/Length").Value)
                 End If
                 ReDim dataBytes(0 To byteLen - 1)
                 CopyBytes bytes, dataBytes, offset, 0, byteLen
@@ -332,11 +332,11 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional meta As 
                 Set result.Value = GetValue(bytes, offset)
                 Dim endObjOrStream As pdfValue
                 If result.Value.valueType = PDF_ValueType.PDF_Dictionary Then
-                    Set meta = result.Value.Value
+                    Set Meta = result.Value.Value
                 Else
-                    Set meta = Nothing
+                    Set Meta = Nothing
                 End If
-                Set endObjOrStream = GetValue(bytes, offset, meta)
+                Set endObjOrStream = GetValue(bytes, offset, Meta)
                 ' if actually a stream obj, a dictionary <<>>stream endstream then load stream data
                 If endObjOrStream.valueType = PDF_ValueType.PDF_StreamData Then
                     Dim stream As pdfValue
@@ -482,13 +482,14 @@ End Function
 ' Note: trailer may be PDF_Null if cross reference stream, if so updated to xref stream dictionary << >>
 ' catalog should not be provided (or pass Nothing) to parse primary cross reference table
 ' and should be a valid Dictionary object for all Prev'ious catalogs parsed
-Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef trailer As pdfValue, Optional ByRef catalog As Dictionary = Nothing) As Dictionary ' of xrefEntry
+Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef trailer As pdfValue, Optional ByRef xrefTable As Dictionary = Nothing) As Dictionary ' of xrefEntry
+    On Error GoTo errHandler
     Dim primaryXref As Boolean ' = False
-    If catalog Is Nothing Then
-        Set catalog = New Dictionary
+    If xrefTable Is Nothing Then
+        Set xrefTable = New Dictionary
         primaryXref = True
     End If
-    Set ParseXrefTable = catalog
+    Set ParseXrefTable = xrefTable
 
     Dim Size As Long    ' how many total entries
     Dim Count As Long   ' how many entries in current xref chunk
@@ -547,13 +548,13 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
                 End If
                 
                 ' add/replace to our catalog
-                If catalog.Exists(entry.id) Then
+                If xrefTable.Exists(entry.id) Then
                     If (entry.id <> 0) And primaryXref Then
                         Debug.Print "Warning: duplicate obj " & entry.id & " found!"
                         Stop
                     End If
                 Else
-                    catalog.Add entry.id, entry
+                    xrefTable.Add entry.id, entry
                     Set entry = Nothing
                 End If
             
@@ -566,7 +567,7 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
         Loop
     
         If Size > 0 Then
-            Debug.Print "Warning: PDF did not find /Size catalog entries - missing " & Size & " entries."
+            Debug.Print "Warning: PDF did not find /Size cross reference entries - missing " & Size & " entries."
         End If
     Else    ' either cross reference stream object stream or failed to find xref table
         If Not IsNumeric(xrefType) Then Exit Function ' didn't find one, nothing to do
@@ -575,23 +576,23 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
         If xrefStream.valueType <> PDF_ValueType.PDF_Object Then Exit Function ' wrong value returned, didn't find xref table
         Dim objStream As pdfStream
         Set objStream = xrefStream.Value.Value
-        If Not objStream.meta.Exists("/Type") Then Exit Function
+        If Not objStream.Meta.Exists("/Type") Then Exit Function
         Dim obj As pdfValue
-        Set obj = objStream.meta.Item("/Type")
+        Set obj = objStream.Meta.Item("/Type")
         If obj.valueType <> PDF_ValueType.PDF_Name Then Exit Function
         If Not IsMatch(obj.Value, "/XRef") Then Exit Function
         
         ' TODO merge? or replacing from stream if both exist
         Set trailer = New pdfValue
-        Set trailer = pdfValueObj(pdfValueObj(objStream.meta, "/Dictionary"), "/Trailer")
+        Set trailer = pdfValueObj(pdfValueObj(objStream.Meta, "/Dictionary"), "/Trailer")
         
         ' get Size value from trailer (really stream dictionary), # of expected total entries
         Size = GetXrefSize(trailer)
         
         ' see how many entries in this xref stream
         Dim subSections As Collection
-        If objStream.meta.Exists("/Index") Then
-            Set subSections = objStream.meta.Item("/Index").Value
+        If objStream.Meta.Exists("/Index") Then
+            Set subSections = objStream.Meta.Item("/Index").Value
         Else ' use defaults
             Set subSections = New Collection
             subSections.Add pdfValueObj(0)
@@ -599,10 +600,10 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
         End If
         
         ' get the /W idth array for each entry
-        If Not objStream.meta.Exists("/W") Then Exit Function
+        If Not objStream.Meta.Exists("/W") Then Exit Function
         Dim widths(0 To 2) As Long
         Dim w As pdfValue
-        Set w = objStream.meta.Item("/W")
+        Set w = objStream.Meta.Item("/W")
         widths(0) = CLng(w.Value.Item(1).Value)
         widths(1) = CLng(w.Value.Item(2).Value)
         widths(2) = CLng(w.Value.Item(3).Value)
@@ -610,32 +611,29 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
         
         ' we need the uncompressed (un-/Filter'd) data
         Dim rawData() As Byte
-        If objStream.meta.Exists("/Filter") Then
+        If objStream.Meta.Exists("/Filter") Then
             ' TODO support all /Filter types
             Dim filter As String
-            filter = objStream.meta.Item("/Filter").Value
+            filter = objStream.Meta.Item("/Filter").Value
             Select Case LCase(filter)
                 Case "/flatedecode"
-                    Dim sourceLen As Long
-                    sourceLen = UBound(objStream.data)
-                    ReDim rawData(0 To (sourceLen * 4))
-                    Dim rawLength As Long ' as count of bytes
-                    'zlib_Inflate.uncompress rawData, destLen, objStream.data, sourceLen
-                    'libdeflate_inflate objStream.data, 2, rawData, destLen
+                    Dim startIndex As Long: startIndex = 2 ' skip past zlib wrapper to raw Deflate data
+                    Erase rawData   ' will be allocated by inflate call
+                    Dim outputLenOrOff As Long ' as count of bytes
                     
-                    sourceLen = 2   ' skip past zlib wrapper to raw Deflate data
-                    If Not inflate2(objStream.data, rawData, sourceLen, rawLength) Then
-                        Debug.Print "Error decompressing!"
-                        Stop
-                    End If
+                    libdeflate_inflate objStream.data, startIndex, rawData, outputLenOrOff
+                    'If Not inflate2(objStream.data, rawData, startIndex, outputLenOrOff) Then
+                    '    Debug.Print "Error decompressing!"
+                    '    Stop
+                    'End If
                     
                     ' do we need to decode uncompressed stream?
                     Dim predictor As Long, columns As Long
                     ' set default values if not otherwise specified
                     predictor = 1: columns = 1
-                    If objStream.meta.Exists("/DecodeParms") Then
+                    If objStream.Meta.Exists("/DecodeParms") Then
                         Dim pdfV As pdfValue
-                        Set pdfV = objStream.meta.Item("/DecodeParms")
+                        Set pdfV = objStream.Meta.Item("/DecodeParms")
                         Dim decodeParms As Dictionary
                         Set decodeParms = pdfV.Value
                         If decodeParms.Exists("/Predictor") Then
@@ -770,13 +768,13 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
                 End Select
             
                 ' add/replace to our catalog
-                If catalog.Exists(entry.id) Then
+                If xrefTable.Exists(entry.id) Then
                     If entry.id <> 0 Then
                         Debug.Print "Warning: duplicate obj " & entry.id & " found!"
                         Stop
                     End If
                 Else
-                    catalog.Add entry.id, entry
+                    xrefTable.Add entry.id, entry
                     Set entry = Nothing
                 End If
             Next i
@@ -788,15 +786,20 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
     Set prevXref = GetDictionaryValue(trailer.Value, "/Prev")
     If prevXref.valueType <> PDF_ValueType.PDF_Null Then
         offset = prevXref.Value
-        ParseXrefTable content, offset, trailer, catalog
+        ParseXrefTable content, offset, trailer, xrefTable
     End If
+
+    Exit Function
+errHandler:
+    Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
+    Stop
+    Resume
 End Function
 
 ' extract xref table (size # of xref entries)
 ' Note: trailer may be PDF_Null if cross reference stream, if so updated to xref stream dictionary << >>
 Function GetXrefTable(ByRef content() As Byte, ByRef trailer As pdfValue) As Dictionary ' of xrefEntry
     On Error GoTo errHandler
-    Dim catalog As Dictionary
         
     ' get offset of xref
     Dim offset As Long
@@ -804,10 +807,8 @@ Function GetXrefTable(ByRef content() As Byte, ByRef trailer As pdfValue) As Dic
     If offset <= 0 Then Exit Function ' didn't find one, nothing to do
     
     ' parse it
-    Set catalog = ParseXrefTable(content, offset, trailer)
+    Set GetXrefTable = ParseXrefTable(content, offset, trailer)
     
-    Set GetXrefTable = catalog
-    Set catalog = Nothing
     Exit Function
 errHandler:
     Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
@@ -833,9 +834,9 @@ Function getObject(ByRef content() As Byte, ByRef xrefTable As Dictionary, ByVal
             
             ' extract our embedded object
             Dim bufSize As Long
-            If cntrObj.Value.Value.meta.Exists("/Length") Then
+            If cntrObj.Value.Value.Meta.Exists("/Length") Then
                 Dim dict As Dictionary
-                Set dict = cntrObj.Value.Value.meta
+                Set dict = cntrObj.Value.Value.Meta
                 bufSize = CLng(dict.Item("/Length").Value)
             Else
                 bufSize = UBound(cntrObj.Value.Value.data) * 4
@@ -924,14 +925,14 @@ errHandler:
 End Function
 
 
-Function GetRootObject(ByRef content() As Byte, ByRef trailer As pdfValue, ByRef catalog As Dictionary) As pdfValue
+Function GetRootObject(ByRef content() As Byte, ByRef trailer As pdfValue, ByRef xrefTable As Dictionary) As pdfValue
     On Error GoTo errHandler
     Dim offset As Long
     Dim root As pdfValue
     ' get either reference or /Root object itself
     Set root = GetRoot(trailer)
     If root.valueType = PDF_ValueType.PDF_Reference Then
-        Set root = getObject(content, catalog, root.Value)
+        Set root = getObject(content, xrefTable, root.Value)
     'ElseIf root.valueType = PDF_ValueType.PDF_Object Then
     End If
     
@@ -945,14 +946,13 @@ errHandler:
 End Function
 
 
-Function GetInfoObject(ByRef content() As Byte, ByRef trailer As pdfValue, ByRef catalog As Dictionary) As pdfValue
+Function GetInfoObject(ByRef content() As Byte, ByRef trailer As pdfValue, ByRef xrefTable As Dictionary) As pdfValue
     On Error GoTo errHandler
-    Dim offset As Long
     Dim Info As pdfValue
     ' get either reference or /Info object itself
     Set Info = GetInfo(trailer)
     If Info.valueType = PDF_ValueType.PDF_Reference Then
-        Set Info = getObject(content, catalog, Info.Value)
+        Set Info = getObject(content, xrefTable, Info.Value)
     'ElseIf info.valueType = PDF_ValueType.PDF_Object Then
     End If
     
@@ -967,7 +967,7 @@ End Function
 
 
 ' updates objects Dictionary with all objects under root node, indexed by object id, i.e. loads a chunk of the PDF document
-Sub GetObjectsInTree(ByRef root As pdfValue, ByRef content() As Byte, ByRef catalog As Dictionary, ByRef objects As Dictionary)
+Sub GetObjectsInTree(ByRef root As pdfValue, ByRef content() As Byte, ByRef xrefTable As Dictionary, ByRef objects As Dictionary)
     On Error GoTo errHandler
     Dim obj As pdfValue
     Dim v As Variant
@@ -979,27 +979,27 @@ Sub GetObjectsInTree(ByRef root As pdfValue, ByRef content() As Byte, ByRef cata
         Case PDF_ValueType.PDF_Array
             For Each v In root.Value
                 Set obj = v
-                GetObjectsInTree obj, content, catalog, objects
+                GetObjectsInTree obj, content, xrefTable, objects
             Next v
         Case PDF_ValueType.PDF_Dictionary
             For Each v In root.Value.Items
                 Set obj = v
-                GetObjectsInTree obj, content, catalog, objects
+                GetObjectsInTree obj, content, xrefTable, objects
             Next v
         Case PDF_ValueType.PDF_Object
-            GetObjectsInTree root.Value, content, catalog, objects
+            GetObjectsInTree root.Value, content, xrefTable, objects
         Case PDF_ValueType.PDF_Reference
             ' we need to load object
             If Not objects.Exists(CLng(root.Value)) Then
-                Set obj = getObject(content, catalog, root.Value)
+                Set obj = getObject(content, xrefTable, root.Value)
                 objects.Add CLng(root.Value), obj
-                GetObjectsInTree obj, content, catalog, objects
+                GetObjectsInTree obj, content, xrefTable, objects
             End If
         Case PDF_ValueType.PDF_Stream
             Dim stream As pdfStream
             Set stream = root.Value
-            GetObjectsInTree stream.stream_meta, content, catalog, objects
-            GetObjectsInTree stream.stream_data, content, catalog, objects
+            GetObjectsInTree stream.stream_meta, content, xrefTable, objects
+            GetObjectsInTree stream.stream_data, content, xrefTable, objects
         Case PDF_ValueType.PDF_StreamData
             ' Nothing to do
         Case PDF_ValueType.PDF_Trailer

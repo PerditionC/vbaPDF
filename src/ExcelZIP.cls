@@ -199,13 +199,43 @@ Public Sub ReadData(ByVal filename As String, ByRef result() As Byte)
     '
     With m_fileHeaders(m_fileIndex(filename))
         If UBound(.uncompressedData) - LBound(.uncompressedData) + 1 = 0 Then
-            'libdeflate_inflate m_bytes, .dataStart, .uncompressedData, .uncompressedSize
-            If inflate2(m_bytes, .uncompressedData, .dataStart, .uncompressedSize) Then
+            libdeflate_inflate m_bytes, .dataStart, .uncompressedData, .uncompressedSize
+            result = .uncompressedData
             If Crc32(.uncompressedData) <> .crc32uncompressed Then
                 Err.Raise 5, TypeName(Me) & ".ReadData", "Corrupted data"
             End If
-            'Else
-            '    Err.Raise 5, TypeName(Me) & ".ReadData", "Error inflating data"
+            Dim other() As Byte, otherSize As Long, startIndex As Long
+            startIndex = .dataStart
+            inflate2 m_bytes, other, startIndex, otherSize
+            otherSize = otherSize - 1
+            If Crc32(.uncompressedData) <> .crc32uncompressed Then
+                Err.Raise 5, TypeName(Me) & ".ReadData", "Corrupted data"
+            End If
+            startIndex = .dataStart
+            .uncompressedSize = 0
+            If inflate2(m_bytes, .uncompressedData, startIndex, .uncompressedSize) Then
+            .uncompressedSize = .uncompressedSize - 1
+            result = .uncompressedData
+            If Crc32(.uncompressedData) <> .crc32uncompressed Then
+                Err.Raise 5, TypeName(Me) & ".ReadData", "Corrupted data"
+            End If
+            Else
+                Err.Raise 5, TypeName(Me) & ".ReadData", "Error inflating data"
+            End If
+            Dim i As Long
+            For i = LBound(.uncompressedData) To UBound(.uncompressedData)
+                If i <= UBound(other) Then
+                    If .uncompressedData(i) <> other(i) Then
+                        Debug.Print ".u(" & i & ")=" & .uncompressedData(i) & "<>" & other(i)
+                    End If
+                Else
+                    Debug.Print "Other is too short!  at i=" & i
+                    Exit For
+                End If
+            Next i
+            Stop
+            If Crc32(other) <> .crc32uncompressed Then
+                Debug.Print "CRC mismatch!"
             End If
         End If
         result = .uncompressedData

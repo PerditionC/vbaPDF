@@ -23,12 +23,12 @@ Private Function CombinePages(ByRef pages1 As pdfValue, ByRef pages2 As pdfValue
     
     Dim v As Variant
     Dim d As Dictionary
-    Dim c As Collection
+    Dim C As Collection
     
     Set d = pages1.Value.Value
     Set obj = d.Item("/Kids")
-    Set c = obj.Value
-    For Each v In c
+    Set C = obj.Value
+    For Each v In C
         Set obj = v ' obj reference
         kids.Add obj
     Next v
@@ -36,8 +36,8 @@ Private Function CombinePages(ByRef pages1 As pdfValue, ByRef pages2 As pdfValue
     ' Warning! TODO! need to fixup actual obj Referenced in here so its /Parent refers back to our pages.id obj
     Set d = pages2.Value.Value
     Set obj = d.Item("/Kids")
-    Set c = obj.Value
-    For Each v In c
+    Set C = obj.Value
+    For Each v In C
         Set obj = v ' obj reference
         obj.Value = baseId + obj.Value      ' Note: only done for pages2 /Kids, this is a reference, so value is the id we reference
         kids.Add obj
@@ -77,7 +77,7 @@ Public Sub CombinePDFs(ByRef sourceFiles() As String, ByRef outFile As String)
         Dim pages As pdfValue
         Set pages = pdfDoc.pages()
         
-        If combinedPdfDoc.rootCatalog Is Nothing Then
+        If combinedPdfDoc.rootCatalog.valueType = PDF_ValueType.PDF_Null Then
             ' first time through we can just use /Root from pdf unchanged
             Set combinedPdfDoc.rootCatalog = pdfDoc.rootCatalog
             Set combinedPdfDoc.trailer = pdfDoc.trailer
@@ -110,13 +110,13 @@ Public Sub CombinePDFs(ByRef sourceFiles() As String, ByRef outFile As String)
             End If
             ' and add to our top level /Pages
             Set obj = combinedPdfDoc.pages.asDictionary.Item("/Kids")
-            Dim c As Collection
-            Set c = obj.Value
+            Dim C As Collection
+            Set C = obj.Value
             ' but as a reference
             Set obj = New pdfValue
             obj.valueType = PDF_ValueType.PDF_Reference
-            obj.Value = pages.id + baseId   ' we must correct id here as we don't when saving this obj
-            c.Add obj
+            obj.Value = pages.id + baseId   ' we must correct id here as we don't update when saving this obj
+            C.Add obj
             ' we also need to update our count
             Set obj = combinedPdfDoc.pages.asDictionary.Item("/Count")
             ' ### not +1 as not a count of /Kids but /Count of total pages, so need to sum child counts
@@ -130,7 +130,8 @@ Public Sub CombinePDFs(ByRef sourceFiles() As String, ByRef outFile As String)
         combinedPdfDoc.SavePdfObjects outputFileNum, pdfDoc.objectCache, offset, baseId
         
         ' determine highest id used, 1st obj in next file will start at this + 1
-        baseId = baseId + combinedPdfDoc.xrefTable.Count - 1 ' highest id possible so far
+        ' Note: we need to use pdfDoc.xrefTable's size and not combinedPdfDoc.xrefTable as we are reserving full count from just loaded pdf document
+        baseId = baseId + pdfDoc.xrefTable.Count - 1 ' highest id possible so far
         DoEvents
     Next ndx
     
@@ -155,8 +156,9 @@ Public Sub PickAndCombinePdfFiles()
     CombinePDFs files, "combined.pdf"
 End Sub
 
-Private Function PickFiles() As String()
-    'Create a FileDialog object as a File Picker dialog box.
+
+'Create a FileDialog object as a File Picker dialog box and returns String array of files selected.
+Function PickFiles() As String()
     Dim fd As FileDialog
     Set fd = Application.FileDialog(msoFileDialogFilePicker)
     With fd

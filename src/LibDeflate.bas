@@ -81,6 +81,10 @@ Public Sub libdeflate_inflate(ByRef bytes() As Byte _
     If outSize <= 0 Then outSize = (UBound(bytes) - LBound(bytes) + 1) * 16&
     ReDim outBytes(0 To outSize - 1)
     Do
+        If bytePos > UBound(bytes) Then
+            isFinalBlock = True
+            Debug.Print "Warning! inflate stopped early, no FinalBlock marker!"
+        Else
         isFinalBlock = CBool(Bits(bytes, bytePos, bitPos, 1))
         blockType = Bits(bytes, bytePos, bitPos, 2)
         If blockType = reserved Then
@@ -156,10 +160,16 @@ Public Sub libdeflate_inflate(ByRef bytes() As Byte _
                 End If
             Loop
         End If
+        End If
     Loop Until isFinalBlock
-    If outPos < outSize Then ReDim Preserve outBytes(0 To outPos - 1)
+    If outPos < outSize Then
+        ReDim Preserve outBytes(0 To outPos - 1)
+        outSize = outPos
+    End If
 Exit Sub
 Fail:
+    Stop
+    Resume
     Err.Raise Err.Number, "Inflate", Err.Description
 End Sub
 Private Function EnsureCapacity(ByRef buffer() As Byte _

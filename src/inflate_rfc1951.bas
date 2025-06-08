@@ -467,7 +467,7 @@ End Function
     Next ndx
     ReverseBits = flipped
     
-    Debug.Print Hex(Value And ((2 ^ bitCount) - 1)) & "-" & Hex(ReverseBits)
+    'Debug.Print Hex(Value And ((2 ^ bitCount) - 1)) & "-" & Hex(ReverseBits)
 End Function
 
 Private Function inflateData( _
@@ -549,10 +549,11 @@ End Function
 ' outputOffset is byte offset to copy uncompressed data to; updated as bytes are decompressed
 ' Returns True if able to successfully decode data, False on any errors
 Public Function inflate2(ByRef cbytes() As Byte, ByRef oBytes() As Byte, ByRef inputOffset As Long, ByRef outputOffset As Long) As Boolean
-    On Error GoTo errHandler
     
     ' if not allocated, then assume 4X compressed size (may need to increase, possibly up to 16X)
+    On Error Resume Next ' if error getting bounds then assume unallocate
     If UBound(oBytes) < LBound(oBytes) Then ReDim oBytes(0 To ((UBound(cbytes) - LBound(cbytes)) * 4) - 1)
+    On Error GoTo errHandler
     
 ''' intialize our constant trees, used by both static and dynamic huffman tree inflation
     buildDistanceTree

@@ -135,6 +135,8 @@ Sub CopyBytes(ByRef src() As Byte, ByRef dst() As Byte, _
                    Optional ByVal srcOffset As Long = 0, Optional ByVal dstOffset As Long = 0, _
                    Optional ByVal Count As Long = -1 _
                   )
+    ' exit early if nothing to copy, avoids out of bounds for FASTCOPY if dstOffset = UBound(dst)+1 and count=0
+    If Count < 1 Then Exit Sub
     If srcOffset < LBound(src) Then srcOffset = LBound(src)
     If dstOffset < LBound(dst) Then dstOffset = LBound(dst)
     If (Count < 0) Or ((Count + srcOffset) > (UBound(src) + 1)) Then Count = UBound(src) - srcOffset + 1
@@ -302,7 +304,7 @@ Function readFile(ByVal filename As String, ByRef fileLen As Long) As Byte()
     fileNum = FreeFile
     Open filename For Binary Access Read Shared As #fileNum
     fileLen = LOF(fileNum)
-    ReDim content(fileLen - 1)
+    If fileLen > 0 Then ReDim content(fileLen - 1)
     Get #fileNum, , content
     
 cleanup:
@@ -314,6 +316,7 @@ errHandler:
     Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
     fileLen = 0
     ReDim content(0)
+    Stop
     Resume cleanup
 End Function
 
