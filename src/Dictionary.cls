@@ -202,7 +202,7 @@ End Type
 #If x32 Then
 Private Type EnumerableVariant
     Value As Variant
-    meta As Long
+    Meta As Long
     IsItemObj As Boolean
     IsKeyObj As Boolean
     NextPtr As Long
@@ -358,7 +358,7 @@ Private Type DictionaryVariables
     Items() As Variant
 #If x64 Then
     Keys() As Variant
-    meta() As Long
+    Meta() As Long
 #Else
     Keys() As EnumerableVariant
 #End If
@@ -454,7 +454,7 @@ Attribute Item.VB_UserMemId = 0
     End If
 #End If
 #If x64 Then
-    If Vars.meta(i) And isItemObjBit Then
+    If Vars.Meta(i) And isItemObjBit Then
 #Else
     If Vars.Keys(i).IsItemObj Then
 #End If
@@ -476,7 +476,7 @@ Public Property Let Item(ByRef Key As Variant, ByRef Item As Variant)
         Exit Property
     End If
     #If x64 Then
-        Vars.meta(i) = Vars.meta(i) And keyBitMask
+        Vars.Meta(i) = Vars.Meta(i) And keyBitMask
     #Else
         Vars.Keys(i).IsItemObj = False
     #End If
@@ -492,7 +492,7 @@ Public Property Set Item(ByRef Key As Variant, ByRef Item As Object)
         Exit Property
     End If
     #If x64 Then
-        Vars.meta(i) = Vars.meta(i) Or isItemObjBit
+        Vars.Meta(i) = Vars.Meta(i) Or isItemObjBit
     #Else
         Vars.Keys(i).IsItemObj = True
     #End If
@@ -547,7 +547,7 @@ Private Sub Init(Optional ByVal newGroupCount As Long = initialGroupCount)
         ReDim .Items(0 To .UBound)
     #If x64 Then
         ReDim .Keys(0 To .UBound + 1) 'Extra member for safe IEnumVariant
-        ReDim .meta(0 To .UBound)
+        ReDim .Meta(0 To .UBound)
     #Else
         ReDim .Keys(0 To .UBound)
     #End If
@@ -597,7 +597,7 @@ Public Function Add(ByRef Key As Variant _
         End If
         #If x64 Then 'Extra member for safe IEnumVariant
             ReDim Preserve Vars.Keys(0 To Vars.UBound + 1)
-            ReDim Preserve Vars.meta(0 To Vars.UBound)
+            ReDim Preserve Vars.Meta(0 To Vars.UBound)
         #Else
             ReDim Preserve Vars.Keys(0 To Vars.UBound)
         #End If
@@ -644,10 +644,10 @@ Public Function Add(ByRef Key As Variant _
         End If
     End If
     If IsObject(Item) Then
-        Vars.meta(i) = hVal Or isItemObjBit
+        Vars.Meta(i) = hVal Or isItemObjBit
         Set Vars.Items(i) = Item
     Else
-        Vars.meta(i) = hVal
+        Vars.Meta(i) = hVal
         Vars.Items(i) = Item
     End If
 #Else
@@ -664,7 +664,7 @@ Public Function Add(ByRef Key As Variant _
         Else
             Vars.Items(i) = Item
         End If
-        .meta = hVal
+        .Meta = hVal
     End With
 #End If
 End Function
@@ -679,9 +679,9 @@ Private Sub Rehash(ByVal newGroupCount As Long)
     InitHashMap newGroupCount
     For i = 0 To Vars.Count - 1
         #If x64 Then
-            hVal = Vars.meta(i)
+            hVal = Vars.Meta(i)
         #Else
-            hVal = Vars.Keys(i).meta
+            hVal = Vars.Keys(i).Meta
         #End If
         If hVal <> hmRemoved Then
             groupSlot = hVal And Vars.Hash.GroupMask
@@ -898,7 +898,7 @@ Private Sub GetIndex(ByRef Key As Variant _
                 End If
                 outIndex = .Index(posInGroup)
 #If x64 Then
-                If (Vars.meta(outIndex) And keyBitMask) = hVal Then
+                If (Vars.Meta(outIndex) And keyBitMask) = hVal Then
                     If vt = vbString And (Vars.Compare > vbBinaryCompare) Then
                         If StrComp(Vars.Keys(outIndex) _
                                  , Key, Vars.Compare) = 0 Then Exit Sub
@@ -911,7 +911,7 @@ Private Sub GetIndex(ByRef Key As Variant _
                     End If
                 End If
 #Else
-                If Vars.Keys(outIndex).meta = hVal Then
+                If Vars.Keys(outIndex).Meta = hVal Then
                     If vt = vbString And (Vars.Compare > vbBinaryCompare) Then
                         If StrComp(Vars.Keys(outIndex).Value _
                                  , Key, Vars.Compare) = 0 Then Exit Sub
@@ -1012,9 +1012,9 @@ Private Function CountRemoved(ByVal upTo As Long) As Long
     End If
     For i = startIndex To endIndex
         #If x64 Then
-            If Vars.meta(i) = hmRemoved Then CountRemoved = CountRemoved + 1
+            If Vars.Meta(i) = hmRemoved Then CountRemoved = CountRemoved + 1
         #Else
-            If Vars.Keys(i).meta = hmRemoved Then CountRemoved = CountRemoved + 1
+            If Vars.Keys(i).Meta = hmRemoved Then CountRemoved = CountRemoved + 1
         #End If
         If CountRemoved = totalRemoved Then Exit For
     Next i
@@ -1029,7 +1029,7 @@ Public Property Get ItemAtIndex(ByVal i As Long) As Variant
     If Vars.UsedCount < Vars.Count Then i = FindIndex(i)
     '
 #If x64 Then
-    If Vars.meta(i) And isItemObjBit Then
+    If Vars.Meta(i) And isItemObjBit Then
 #Else
     If Vars.Keys(i).IsItemObj Then
 #End If
@@ -1046,7 +1046,7 @@ Public Property Let ItemAtIndex(ByVal i As Long, ByRef Item As Variant)
     '
     If Vars.UsedCount < Vars.Count Then i = FindIndex(i)
     #If x64 Then
-        Vars.meta(i) = Vars.meta(i) And keyBitMask
+        Vars.Meta(i) = Vars.Meta(i) And keyBitMask
     #Else
         Vars.Keys(i).IsItemObj = False
     #End If
@@ -1057,7 +1057,7 @@ Public Property Set ItemAtIndex(ByVal i As Long, ByRef Item As Object)
     If Vars.UsedCount < Vars.Count Then i = FindIndex(i)
     '
     #If x64 Then
-        Vars.meta(i) = Vars.meta(i) Or isItemObjBit
+        Vars.Meta(i) = Vars.Meta(i) Or isItemObjBit
     #Else
         Vars.Keys(i).IsItemObj = True
     #End If
@@ -1067,9 +1067,9 @@ Private Function FindIndex(ByVal i As Long) As Long
     Dim j As Long
     For j = 0 To Vars.Count - 1
         #If x64 Then
-            If Vars.meta(j) <> hmRemoved Then i = i - 1
+            If Vars.Meta(j) <> hmRemoved Then i = i - 1
         #Else
-            If Vars.Keys(j).meta <> hmRemoved Then i = i - 1
+            If Vars.Keys(j).Meta <> hmRemoved Then i = i - 1
         #End If
         If i < 0 Then Exit For
     Next j
@@ -1100,10 +1100,10 @@ Public Property Get Items() As Variant()
         '
         For i = 0 To Vars.Count - 1
 #If x64 Then
-            If Vars.meta(i) <> hmRemoved Then
-                If Vars.meta(i) And isItemObjBit Then
+            If Vars.Meta(i) <> hmRemoved Then
+                If Vars.Meta(i) And isItemObjBit Then
 #Else
-            If Vars.Keys(i).meta <> hmRemoved Then
+            If Vars.Keys(i).Meta <> hmRemoved Then
                 If Vars.Keys(i).IsItemObj Then
 #End If
                     Set res(j) = Vars.Items(i)
@@ -1164,13 +1164,13 @@ Public Property Let Key(ByRef OldKey As Variant, ByRef NewKey As Variant)
     Else
         If isObj Then Set Vars.Keys(i) = NewKey Else Vars.Keys(i) = NewKey
     End If
-    If Vars.meta(i) And isItemObjBit Then hVal = hVal Or isItemObjBit
-    Vars.meta(i) = hVal
+    If Vars.Meta(i) And isItemObjBit Then hVal = hVal Or isItemObjBit
+    Vars.Meta(i) = hVal
 #Else
     With Vars.Keys(i)
         .IsKeyObj = CBool(hVal And HashMeta.hmObject)
         If .IsKeyObj Then Set .Value = NewKey Else .Value = NewKey
-        .meta = hVal
+        .Meta = hVal
     End With
 #End If
     '
@@ -1213,7 +1213,7 @@ Public Property Get KeyAtIndex(ByVal i As Long) As Variant
     If Vars.UsedCount < Vars.Count Then i = FindIndex(i)
     '
 #If x64 Then
-    If Vars.meta(i) And hmObject Then
+    If Vars.Meta(i) And hmObject Then
         Set KeyAtIndex = Vars.Keys(i)
     Else
         KeyAtIndex = Vars.Keys(i)
@@ -1252,8 +1252,8 @@ Public Property Get Keys() As Variant()
     Else
         ReDim res(0 To Vars.UsedCount - 1)
         For i = 0 To Vars.Count - 1
-            If Vars.meta(i) <> hmRemoved Then
-                If Vars.meta(i) And hmObject Then
+            If Vars.Meta(i) <> hmRemoved Then
+                If Vars.Meta(i) And hmObject Then
                     Set res(j) = Vars.Keys(i)
                 Else
                     res(j) = Vars.Keys(i)
@@ -1267,7 +1267,7 @@ Public Property Get Keys() As Variant()
     ReDim res(0 To Vars.UsedCount - 1)
     For i = 0 To Vars.Count - 1
         With Vars.Keys(i)
-            If .meta <> hmRemoved Then
+            If .Meta <> hmRemoved Then
                 If .IsKeyObj Then Set res(j) = .Value Else res(j) = .Value
                 j = j + 1
             End If
@@ -1301,16 +1301,16 @@ Public Property Get KeysItems2D() As Variant()
         ReDim res(0 To .UsedCount - 1, 0 To 1)
         For i = 0 To .Count - 1
             #If x64 Then
-                If .meta(i) <> hmRemoved Then
-                    If .meta(i) And hmObject Then Set res(j, 0) = .Keys(i) _
+                If .Meta(i) <> hmRemoved Then
+                    If .Meta(i) And hmObject Then Set res(j, 0) = .Keys(i) _
                                              Else res(j, 0) = .Keys(i)
-                    If .meta(i) And isItemObjBit Then Set res(j, 1) = .Items(i) _
+                    If .Meta(i) And isItemObjBit Then Set res(j, 1) = .Items(i) _
                                                  Else res(j, 1) = .Items(i)
                     j = j + 1
                 End If
             #Else
                 With .Keys(i)
-                    If .meta <> hmRemoved Then
+                    If .Meta <> hmRemoved Then
                         If .IsKeyObj Then Set res(j, 0) = .Value _
                                      Else res(j, 0) = .Value
                         If .IsItemObj Then Set res(j, 1) = Vars.Items(i) _
@@ -1381,26 +1381,26 @@ Public Function Remove(ByRef Key As Variant _
         Vars.Items(i) = Empty
         #If x64 Then
             Vars.Keys(i) = Empty
-            Vars.meta(i) = hmRemoved
+            Vars.Meta(i) = hmRemoved
         #Else
             Vars.Keys(i).Value = Empty
-            Vars.Keys(i).meta = hmRemoved
+            Vars.Keys(i).Meta = hmRemoved
         #End If
         If Vars.Enums.hasEnum Then 'Link previous to next
             j = i + 1
             #If x64 Then
-                Do While Vars.meta(j) = hmRemoved: j = j + 1: Loop
+                Do While Vars.Meta(j) = hmRemoved: j = j + 1: Loop
             #Else
-                Do While Vars.Keys(j).meta = hmRemoved: j = j + 1: Loop
+                Do While Vars.Keys(j).Meta = hmRemoved: j = j + 1: Loop
             #End If
             ptr = VarPtr(Vars.Keys(j))
             RemoveUnusedEnums VarPtr(Vars.Keys(i)), ptr
             j = i - 1
             Do While j >= 0
                 #If x64 Then
-                    If Vars.meta(j) <> hmRemoved Then Exit Do
+                    If Vars.Meta(j) <> hmRemoved Then Exit Do
                 #Else
-                    If Vars.Keys(j).meta <> hmRemoved Then Exit Do
+                    If Vars.Keys(j).Meta <> hmRemoved Then Exit Do
                 #End If
                 j = j - 1
             Loop
@@ -1421,9 +1421,9 @@ Public Function Remove(ByRef Key As Variant _
     If Vars.Count > Vars.UsedCount Then
         i = lastPos - 1
         #If x64 Then
-            Do While Vars.meta(i) = hmRemoved: i = i - 1: Loop
+            Do While Vars.Meta(i) = hmRemoved: i = i - 1: Loop
         #Else
-            Do While Vars.Keys(i).meta = hmRemoved: i = i - 1: Loop
+            Do While Vars.Keys(i).Meta = hmRemoved: i = i - 1: Loop
         #End If
         Vars.Count = Vars.Count - lastPos + i + 1
     End If
@@ -1644,7 +1644,7 @@ Friend Sub InitStructs(ByRef dict As Dictionary _
         Const opNumDictHashVal As Long = 21
         Const opNumCollItem As Long = 7
         Static mainVTable(0 To dictMainVTableSize - 1) As LongPtr
-        Static c As Collection
+        Static C As Collection
         Static saC As SAFEARRAY_1D
         Dim i As Long
         '
@@ -1653,7 +1653,7 @@ Friend Sub InitStructs(ByRef dict As Dictionary _
         '   calls to HashVal with early binding speed without a dll reference
         '
         InitSafeArray saC, ptrSize
-        saC.pvData = VarPtr(c)
+        saC.pvData = VarPtr(C)
         saC.rgsabound0.cElements = 1
         saPtrs(4) = VarPtr(saC)
         '
@@ -1695,7 +1695,7 @@ Friend Sub InitStructs(ByRef dict As Dictionary _
             h.sdl.hashModulo = HashMeta.[_modHM]
             h.sdl.refCount = 2 'To avoid deallocation
             h.saP.rgsabound0.cElements = 1
-            h.saP.pvData = VarPtr(c)
+            h.saP.pvData = VarPtr(C)
             Mem.RPtr(0) = VarPtr(h.sdl)
         End If
         #If x64StackIssues Then
@@ -1829,9 +1829,9 @@ Private Property Let MemLongPtr(ByVal memAddress As LongPtr _
     VariantCopy remoteVT, VarPtr(fv) 'Init VarType ByRef
     '
 #If Win64 Then 'Cannot assign LongLong ByRef
-    Dim c As Currency
-    RemoteAssign memValue, VarPtr(newValue), remoteVT, vbCurrency + VT_BYREF, c, memValue
-    RemoteAssign memValue, memAddress, remoteVT, vbCurrency + VT_BYREF, memValue, c
+    Dim C As Currency
+    RemoteAssign memValue, VarPtr(newValue), remoteVT, vbCurrency + VT_BYREF, C, memValue
+    RemoteAssign memValue, memAddress, remoteVT, vbCurrency + VT_BYREF, memValue, C
 #Else 'Can assign Long ByRef
     RemoteAssign memValue, memAddress, remoteVT, vbLong + VT_BYREF, memValue, newValue
 #End If
@@ -2006,9 +2006,9 @@ Private Function DictEnum() As IUnknown
     i = 0
     If hasGaps Then
         #If x64 Then
-            Do While Vars.meta(i) = hmRemoved: i = i + 1: Loop
+            Do While Vars.Meta(i) = hmRemoved: i = i + 1: Loop
         #Else
-            Do While Vars.Keys(i).meta = hmRemoved: i = i + 1: Loop
+            Do While Vars.Keys(i).Meta = hmRemoved: i = i + 1: Loop
         #End If
     End If
     With Mem.Common(0)
@@ -2033,7 +2033,7 @@ Private Function DictEnum() As IUnknown
         If hasGaps Then
             j = i * 3 + 5
             For i = i + 1 To Vars.Count - 1
-                If Vars.meta(i) <> hmRemoved Then
+                If Vars.Meta(i) <> hmRemoved Then
                     Mem.RPtr(j) = ptr + variantSize * i
                     j = i * 3 + 5
                 End If
@@ -2059,7 +2059,7 @@ Private Function DictEnum() As IUnknown
     If hasGaps Then
         j = i
         For i = i + 1 To Vars.Count - 1
-            If Vars.Keys(i).meta <> hmRemoved Then
+            If Vars.Keys(i).Meta <> hmRemoved Then
                 Vars.Keys(j).NextPtr = ptr + enumVarSize * i
                 j = i
             End If
@@ -2239,8 +2239,8 @@ Friend Sub ManageDeepNested(ByRef v As DictionaryVariables _
     Else
         For i = 0 To v.Count - 1
         #If x64 Then
-            If v.meta(i) And hmObject Then dicts.Add v.Keys(i)
-            If v.meta(i) And isItemObjBit Then dicts.Add v.Items(i)
+            If v.Meta(i) And hmObject Then dicts.Add v.Keys(i)
+            If v.Meta(i) And isItemObjBit Then dicts.Add v.Items(i)
         #Else
             If v.Keys(i).IsKeyObj Then dicts.Add v.Keys(i).Value
             If v.Keys(i).IsItemObj Then dicts.Add v.Items(i)
@@ -2470,7 +2470,7 @@ Public Function TryGetItem(ByRef Key As Variant _
     Dim i As Long: GetIndex Key, i, IgnoreErrors:=True
     If i <= notFound Then Exit Function
 #If x64 Then
-    If Vars.meta(i) And isItemObjBit Then
+    If Vars.Meta(i) And isItemObjBit Then
 #Else
     If Vars.Keys(i).IsItemObj Then
 #End If

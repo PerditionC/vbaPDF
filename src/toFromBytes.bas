@@ -136,7 +136,7 @@ Sub CopyBytes(ByRef src() As Byte, ByRef dst() As Byte, _
                    Optional ByVal Count As Long = -1 _
                   )
     ' exit early if nothing to copy, avoids out of bounds for FASTCOPY if dstOffset = UBound(dst)+1 and count=0
-    If Count < 1 Then Exit Sub
+    If Count = 0 Then Exit Sub
     If srcOffset < LBound(src) Then srcOffset = LBound(src)
     If dstOffset < LBound(dst) Then dstOffset = LBound(dst)
     If (Count < 0) Or ((Count + srcOffset) > (UBound(src) + 1)) Then Count = UBound(src) - srcOffset + 1

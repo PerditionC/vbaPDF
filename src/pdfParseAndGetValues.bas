@@ -85,6 +85,8 @@ Function GetValueType(ByRef bytes() As Byte, ByVal offset As Long) As PDF_ValueT
             GetValueType = PDF_ValueType.PDF_String
         Case "["
             GetValueType = PDF_ValueType.PDF_Array
+        Case "]"
+            GetValueType = PDF_ValueType.PDF_EndOfArray
         Case "<"
             If IsMatch("<", Chr(bytes(offset + 1))) Then
                 GetValueType = PDF_ValueType.PDF_Dictionary ' <<...>>
@@ -94,11 +96,11 @@ Function GetValueType(ByRef bytes() As Byte, ByVal offset As Long) As PDF_ValueT
         Case "%"
             GetValueType = PDF_ValueType.PDF_Comment
             
-        Case "e", ">", "]"
+        Case "e", ">" ', "]"
             tmpStr = GetWord(bytes, offset)
             Select Case LCase(tmpStr)
-                Case "]"
-                    GetValueType = PDF_ValueType.PDF_EndOfArray
+'                Case "]"
+'                    GetValueType = PDF_ValueType.PDF_EndOfArray
                 Case ">>"
                     GetValueType = PDF_ValueType.PDF_EndOfDictionary
                 Case "endstream"
@@ -416,6 +418,33 @@ errHandler:
 End Function
 
 
+' validates content() probably is a PDF document and returns version from PDF declaration
+' returns True if found a valid PDF version, False on any error or invalid version declaration
+Function GetPdfHeader(ByRef content() As Byte, ByRef headerVersion As String) As Boolean
+    On Error GoTo errHandler
+    ' PDF documents should begin with something like %PDF-1.7<whitespace>
+    Dim pdfHeaderVersion As String
+    Dim unusedOffset As Long
+    ' extract initial string in file, reusing GetWord but it should work fine for this purpose
+    pdfHeaderVersion = TrimWS(GetWord(content, unusedOffset))
+    
+    ' validate its in epected format
+    If Not IsMatch("%PDF-", Left(pdfHeaderVersion, 5)) Then
+        Debug.Print "Likely invalid PDF, file begins with [" & pdfHeaderVersion & "] expecting PDF-#.#"
+        Exit Function
+    End If
+    
+    ' return header version
+    headerVersion = pdfHeaderVersion
+    
+    GetPdfHeader = True ' success
+    Exit Function
+errHandler:
+    Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
+    Stop
+End Function
+
+
 ' given a pdfValue dictionary object, returns the values associated with a given name
 Function GetDictionaryValue(ByRef Value As pdfValue, ByVal name As String) As pdfValue
     On Error GoTo errHandler
@@ -621,11 +650,12 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
                     Erase rawData   ' will be allocated by inflate call
                     Dim outputLenOrOff As Long ' as count of bytes
                     
-                    libdeflate_inflate objStream.data, startIndex, rawData, outputLenOrOff
-                    'If Not inflate2(objStream.data, rawData, startIndex, outputLenOrOff) Then
-                    '    Debug.Print "Error decompressing!"
-                    '    Stop
-                    'End If
+                    ' Note: libdeflate_inflate arguments are byVal, we expect them be byRef
+                    'libdeflate_inflate objStream.data, startIndex, rawData, outputLenOrOff
+                    If Not inflate2(objStream.data, rawData, startIndex, outputLenOrOff) Then
+                        Debug.Print "Error decompressing!"
+                        Stop
+                    End If
                     
                     ' do we need to decode uncompressed stream?
                     Dim predictor As Long, columns As Long
@@ -769,9 +799,11 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
             
                 ' add/replace to our catalog
                 If xrefTable.Exists(entry.id) Then
+                    ' Note: this is fine if we are reading in previous cross reference table,
+                    ' it just means this object was updated (replaced) in the pdf
                     If entry.id <> 0 Then
                         Debug.Print "Warning: duplicate obj " & entry.id & " found!"
-                        Stop
+                        'Stop
                     End If
                 Else
                     xrefTable.Add entry.id, entry
@@ -829,33 +861,25 @@ Function getObject(ByRef content() As Byte, ByRef xrefTable As Dictionary, ByVal
         If entry.isEmbeded Then
             Dim cntrObjEntry As xrefEntry
             Set cntrObjEntry = xrefTable.Item(entry.embedObjId)
-            Dim cntrObj
+            Dim cntrObj As pdfValue
             Set cntrObj = getObject(content, xrefTable, entry.embedObjId)
+            Dim dict As Dictionary
+            Set dict = cntrObj.Value.Value.Meta
             
             ' extract our embedded object
-            Dim bufSize As Long
-            If cntrObj.Value.Value.Meta.Exists("/Length") Then
-                Dim dict As Dictionary
-                Set dict = cntrObj.Value.Value.Meta
-                bufSize = CLng(dict.Item("/Length").Value)
-            Else
-                bufSize = UBound(cntrObj.Value.Value.data) * 4
-            End If
-            Dim buffer() As Byte
-            ReDim buffer(0 To bufSize - 1)
-            ReDim buffer(0 To bufSize * 2)
-            Dim inOff As Long, outSize As Long
-            Dim cbuf() As Byte
+            Dim cbuf() As Byte, buffer() As Byte
+            Dim inOff As Long, outSize As Long, estBufSize As Long
             cbuf = cntrObj.Value.Value.data
             inOff = 2
-            If inflate2(cbuf, buffer, inOff, outSize) Then
+            If dict.Exists("/DL") Then estBufSize = CLng(dict.Item("/DL").Value) ' only a hint
+            If inflate2(cbuf, buffer, inOff, outSize, estBufSize) Then
                 ' parse embedded object data
                 ' buffer has N sets of obj id# <whitespace> offset
                 ' immediately followed by objects' data, note: /First
                 ' should be used to determine where data starts when reading
                 ' as additional data could exists between index and data
                 ' we store as key=value, the object id=offset in embCatalog
-                Dim embCatalog As Dictionary: Set embCatalog = New Dictionary
+                Dim embXRefTable As Dictionary: Set embXRefTable = New Dictionary
                 Dim embOffset As Long
                 Dim i As Long
                 Dim firstOffset As Long
@@ -873,7 +897,7 @@ Function getObject(ByRef content() As Byte, ByRef xrefTable As Dictionary, ByVal
                         id = v.Value
                         Set v = GetValue(buffer, embOffset)
                         objOffset = v.Value
-                        embCatalog.Add id, objOffset
+                        embXRefTable.Add id, objOffset
                     Next i
                 Else
                     Debug.Print "Missing count of embedded objects!"
@@ -883,7 +907,7 @@ Function getObject(ByRef content() As Byte, ByRef xrefTable As Dictionary, ByVal
                             id = v.Value
                             Set v = GetValue(buffer, embOffset)
                             offset = v.Value
-                            embCatalog.Add id, offset
+                            embXRefTable.Add id, offset
                         Loop While embOffset < firstOffset
                     Else
                         Debug.Print "Error: unable to parse embedded object!"
@@ -897,7 +921,7 @@ Function getObject(ByRef content() As Byte, ByRef xrefTable As Dictionary, ByVal
                 ElseIf firstOffset > embOffset Then
                     Debug.Print "Warning: embedded object does not begin immediate after mini-catalog"
                 End If
-                embOffset = embCatalog.Item(entry.id) + firstOffset
+                embOffset = embXRefTable.Item(entry.id) + firstOffset
                 Set obj = New pdfValue
                 obj.id = entry.id
                 obj.valueType = PDF_ValueType.PDF_Object

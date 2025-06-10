@@ -42,6 +42,7 @@ Function asDictionary() As Dictionary
 errHandler:
     Debug.Print Err.Description & " (" & Err.Number & ")"
     Stop
+    Resume
 End Function
 
 

@@ -62,13 +62,13 @@ Private m_version As PDF_VERSIONS
 Private m_header As String
 
 ' update version, changes to version also update header
-Public Property Let Version(ByVal pdfVersion As PDF_VERSIONS)
+Public Property Let version(ByVal pdfVersion As PDF_VERSIONS)
     m_version = pdfVersion
     m_header = "%PDF-" & Format(pdfVersion / 10#, "#.0") & vbNewLine
 End Property
-Public Property Get Version() As PDF_VERSIONS
-    If m_version = 0 Then Me.Version = PDF_VERSIONS.PDF_Default   ' if not set, use default
-    Version = m_version
+Public Property Get version() As PDF_VERSIONS
+    If m_version = 0 Then Me.version = PDF_VERSIONS.PDF_Default   ' if not set, use default
+    version = m_version
 End Property
 
 ' update header, changes to header also update version
@@ -79,7 +79,7 @@ Public Property Let Header(ByVal pdfHeader As String)
     If position > 0 Then
         Dim s As String
         s = TrimWS(Mid(pdfHeader, position + 1))
-        m_version = Round(CDbl(s), 1)
+        m_version = Round(CDbl(s), 1) * 10
     Else
         m_version = PDF_Default
     End If
@@ -87,7 +87,7 @@ End Property
 Public Property Get Header() As String
     If IsBlank(m_header) Then   ' get default header and version
         Dim defVersion As PDF_VERSIONS
-        defVersion = Version    ' sets header when it initializes version
+        defVersion = version    ' sets header when it initializes version
     End If
     Header = m_header
 End Property
@@ -316,8 +316,13 @@ Public Function loadPdf(ByVal pdfFilename As String) As Boolean
         Exit Function
     End If
     
-    ' get start of xref
-    'Dim xrefOffset As Long: xrefOffset = GetXrefOffset(content)
+    ' validate probably a PDF file and get header version (more recent version# may be specified in root Catalog)
+    Dim headerVersion As String ' Note: we have to pass a String object as Me.Header won't save changes
+    If Not GetPdfHeader(content, headerVersion) Then
+        Erase content
+        Exit Function ' return False
+    End If
+    Me.Header = headerVersion   ' Note: this also updates our Version value
     
     ' get trailer with /Root information
     Set trailer = GetTrailer(content)

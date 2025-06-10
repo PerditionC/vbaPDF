@@ -14,9 +14,42 @@ End Sub
 Sub TestHeaderAndVersion()
     Dim pdfDoc As pdfDocument
     Set pdfDoc = New pdfDocument
-    Debug.Print pdfDoc.Version
+    Debug.Print pdfDoc.version
     Set pdfDoc = New pdfDocument
     Debug.Print "[" & pdfDoc.Header & "]"
+End Sub
+
+
+Sub TestProblemPdfs()
+    On Error GoTo errHandler
+    Const basedir As String = "C:\Users\jeremyd\Downloads\"
+    Const filename As String = "2025 Request to Expunge Form pdf.pdf"
+    
+    ' create VBA object to work with PDF document
+    Dim pdfDoc As pdfDocument
+    Set pdfDoc = New pdfDocument
+    
+    ' attempt to load PDF document, initializes trailer and rootCatalog but otherwise does not parse PDF objects contained in document
+    If Not pdfDoc.loadPdf(basedir & filename) Then
+        Debug.Print "Error loading " & pdfDoc.filename
+    End If
+    
+    ' without parsing whole document just get the metadata about this document
+    Debug.Print BytesToString(pdfDoc.Info.serialize)
+    Debug.Print BytesToString(pdfDoc.Meta.serialize)
+    
+    ' actually load all the pdf objects referenced from the root catalog (does not load orphan'd objects)
+    If Not pdfDoc.parsePdf() Then
+        Debug.Print "Error parsing pdf " & pdfDoc.filename
+    End If
+    
+    Debug.Print pdfDoc.pages.asDictionary.Item("/Count").Value
+    
+    Exit Sub
+errHandler:
+    Debug.Print "Error: " & Err.Description
+    Stop
+    Resume
 End Sub
 
 Sub TestReWritePdf()
@@ -32,8 +65,8 @@ Sub TestReWritePdf()
     End If
     
     ' without parsing whole document just get the metadata about this document
-    'Debug.Print BytesToString(pdfDoc.Info)
-    'Debug.Print BytesToString(pdfDoc.Meta)
+    'Debug.Print BytesToString(pdfDoc.Info.serialize)
+    'Debug.Print BytesToString(pdfDoc.Meta.serialize)
     
     ' actually load all the pdf objects referenced from the root catalog (does not load orphan'd objects)
     If Not pdfDoc.parsePdf() Then
