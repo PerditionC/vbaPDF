@@ -96,11 +96,9 @@ Function GetValueType(ByRef bytes() As Byte, ByVal offset As Long) As PDF_ValueT
         Case "%"
             GetValueType = PDF_ValueType.PDF_Comment
             
-        Case "e", ">" ', "]"
+        Case "e", ">" '
             tmpStr = GetWord(bytes, offset)
             Select Case LCase(tmpStr)
-'                Case "]"
-'                    GetValueType = PDF_ValueType.PDF_EndOfArray
                 Case ">>"
                     GetValueType = PDF_ValueType.PDF_EndOfDictionary
                 Case "endstream"
@@ -451,8 +449,7 @@ Function GetDictionaryValue(ByRef Value As pdfValue, ByVal name As String) As pd
     If Value.Value.Exists(name) Then
         Set GetDictionaryValue = Value.Value.Item(name)
     Else
-        Set GetDictionaryValue = New pdfValue
-        GetDictionaryValue.valueType = PDF_ValueType.PDF_Null
+        Set GetDictionaryValue = New pdfValue   ' defaults to PDF_ValueType.PDF_Null
     End If
     Exit Function
 errHandler:
@@ -640,6 +637,9 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
         
         ' we need the uncompressed (un-/Filter'd) data
         Dim rawData() As Byte
+#If True Then
+        rawData = objStream.udata
+#Else
         If objStream.Meta.Exists("/Filter") Then
             ' TODO support all /Filter types
             Dim filter As String
@@ -753,6 +753,7 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
         Else
             rawData = objStream.data
         End If
+#End If
         
         Dim objOffset As Long
         objOffset = 0
@@ -849,7 +850,10 @@ errHandler:
 End Function
 
 
-Function getObject(ByRef content() As Byte, ByRef xrefTable As Dictionary, ByVal Index As Long) As pdfValue
+' extracts/parses pdf object from raw pdf content()
+' due to potential slowness uncompressing in VBA, stream object streams should be cached
+' the sosCache is only used for stream object streams and only if provided
+Function getObject(ByRef content() As Byte, ByRef xrefTable As Dictionary, ByVal Index As Long, ByRef sosCache As Dictionary) As pdfValue
     On Error GoTo errHandler
     Dim obj As pdfValue
     If xrefTable.Exists(Index) Then
@@ -862,17 +866,26 @@ Function getObject(ByRef content() As Byte, ByRef xrefTable As Dictionary, ByVal
             Dim cntrObjEntry As xrefEntry
             Set cntrObjEntry = xrefTable.Item(entry.embedObjId)
             Dim cntrObj As pdfValue
-            Set cntrObj = getObject(content, xrefTable, entry.embedObjId)
-            Dim dict As Dictionary
-            Set dict = cntrObj.Value.Value.Meta
+            ' try loading containing object (stream object stream) from cache before potentially uncompressing
+            If Not sosCache Is Nothing Then
+                If sosCache.Exists(entry.embedObjId) Then Set cntrObj = sosCache(entry.embedObjId)
+            End If
+            If cntrObj Is Nothing Then  ' not in cache or no cache provided
+                Set cntrObj = getObject(content, xrefTable, entry.embedObjId, sosCache)
+                If Not sosCache Is Nothing Then Set sosCache(entry.embedObjId) = cntrObj    ' add/update cache
+            End If
             
             ' extract our embedded object
-            Dim cbuf() As Byte, buffer() As Byte
-            Dim inOff As Long, outSize As Long, estBufSize As Long
-            cbuf = cntrObj.Value.Value.data
-            inOff = 2
-            If dict.Exists("/DL") Then estBufSize = CLng(dict.Item("/DL").Value) ' only a hint
-            If inflate2(cbuf, buffer, inOff, outSize, estBufSize) Then
+            If cntrObj.Value.valueType <> PDF_ValueType.PDF_Stream Then
+                Debug.Print "Error! expecting stream object stream!"
+                Stop
+                GoTo nullValue
+            End If
+            Dim streamObjectStream As pdfStream
+            Set streamObjectStream = cntrObj.Value.Value
+            Dim buffer() As Byte
+            buffer = streamObjectStream.udata
+            If (UBound(buffer) - LBound(buffer)) > 0 Then
                 ' parse embedded object data
                 ' buffer has N sets of obj id# <whitespace> offset
                 ' immediately followed by objects' data, note: /First
@@ -883,6 +896,8 @@ Function getObject(ByRef content() As Byte, ByRef xrefTable As Dictionary, ByVal
                 Dim embOffset As Long
                 Dim i As Long
                 Dim firstOffset As Long
+                Dim dict As Dictionary
+                Set dict = streamObjectStream.Meta
                 If dict.Exists("/First") Then
                     firstOffset = CLng(dict.Item("/First").Value)
                 Else
@@ -927,7 +942,7 @@ Function getObject(ByRef content() As Byte, ByRef xrefTable As Dictionary, ByVal
                 obj.valueType = PDF_ValueType.PDF_Object
                 Set obj.Value = GetValue(buffer, embOffset)
             Else
-                Debug.Print "Error inflating embedded object!"
+                Debug.Print "Error reading embedded object!"
                 Stop
             End If
         Else
@@ -956,7 +971,7 @@ Function GetRootObject(ByRef content() As Byte, ByRef trailer As pdfValue, ByRef
     ' get either reference or /Root object itself
     Set root = GetRoot(trailer)
     If root.valueType = PDF_ValueType.PDF_Reference Then
-        Set root = getObject(content, xrefTable, root.Value)
+        Set root = getObject(content, xrefTable, root.Value, Nothing)
     'ElseIf root.valueType = PDF_ValueType.PDF_Object Then
     End If
     
@@ -976,7 +991,7 @@ Function GetInfoObject(ByRef content() As Byte, ByRef trailer As pdfValue, ByRef
     ' get either reference or /Info object itself
     Set Info = GetInfo(trailer)
     If Info.valueType = PDF_ValueType.PDF_Reference Then
-        Set Info = getObject(content, xrefTable, Info.Value)
+        Set Info = getObject(content, xrefTable, Info.Value, Nothing)
     'ElseIf info.valueType = PDF_ValueType.PDF_Object Then
     End If
     
@@ -991,7 +1006,7 @@ End Function
 
 
 ' updates objects Dictionary with all objects under root node, indexed by object id, i.e. loads a chunk of the PDF document
-Sub GetObjectsInTree(ByRef root As pdfValue, ByRef content() As Byte, ByRef xrefTable As Dictionary, ByRef objects As Dictionary)
+Sub GetObjectsInTree(ByRef root As pdfValue, ByRef content() As Byte, ByRef xrefTable As Dictionary, ByRef objects As Dictionary, ByRef sosCache As Dictionary)
     On Error GoTo errHandler
     Dim obj As pdfValue
     Dim v As Variant
@@ -1003,27 +1018,27 @@ Sub GetObjectsInTree(ByRef root As pdfValue, ByRef content() As Byte, ByRef xref
         Case PDF_ValueType.PDF_Array
             For Each v In root.Value
                 Set obj = v
-                GetObjectsInTree obj, content, xrefTable, objects
+                GetObjectsInTree obj, content, xrefTable, objects, sosCache
             Next v
         Case PDF_ValueType.PDF_Dictionary
             For Each v In root.Value.Items
                 Set obj = v
-                GetObjectsInTree obj, content, xrefTable, objects
+                GetObjectsInTree obj, content, xrefTable, objects, sosCache
             Next v
         Case PDF_ValueType.PDF_Object
-            GetObjectsInTree root.Value, content, xrefTable, objects
+            GetObjectsInTree root.Value, content, xrefTable, objects, sosCache
         Case PDF_ValueType.PDF_Reference
             ' we need to load object
             If Not objects.Exists(CLng(root.Value)) Then
-                Set obj = getObject(content, xrefTable, root.Value)
+                Set obj = getObject(content, xrefTable, root.Value, sosCache)
                 objects.Add CLng(root.Value), obj
-                GetObjectsInTree obj, content, xrefTable, objects
+                GetObjectsInTree obj, content, xrefTable, objects, sosCache
             End If
         Case PDF_ValueType.PDF_Stream
             Dim stream As pdfStream
             Set stream = root.Value
-            GetObjectsInTree stream.stream_meta, content, xrefTable, objects
-            GetObjectsInTree stream.stream_data, content, xrefTable, objects
+            GetObjectsInTree stream.stream_meta, content, xrefTable, objects, sosCache
+            GetObjectsInTree stream.stream_data, content, xrefTable, objects, sosCache
         Case PDF_ValueType.PDF_StreamData
             ' Nothing to do
         Case PDF_ValueType.PDF_Trailer

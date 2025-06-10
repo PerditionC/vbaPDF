@@ -19,7 +19,6 @@ Sub TestHeaderAndVersion()
     Debug.Print "[" & pdfDoc.Header & "]"
 End Sub
 
-
 Sub TestProblemPdfs()
     On Error GoTo errHandler
     Const basedir As String = "C:\Users\jeremyd\Downloads\"

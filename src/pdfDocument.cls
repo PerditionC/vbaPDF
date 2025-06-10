@@ -32,6 +32,9 @@ Private m_Pages As pdfValue
 ' cache of loaded/shared objects
 Public objectCache As Dictionary ' of pdfValue key'd by object id
 
+' cache only used when loading embedded objects from stream object streams, caches the stream object
+Private sosCache As Dictionary
+
 ' the full contents of raw PDF document
 Private content() As Byte
 
@@ -129,20 +132,16 @@ Public Property Get Info() As pdfValue
         ' note: we Set m_Info instead of Me.Info as we are retrieving /Info id from trailer's reference object already
     
         ' get reference to /Info object (object itself should not be stored directly in trailer)
+        ' if no /Info key or it refers to null, then returns pdf null value
+        ' (if /Info stored directly as object, not valid, but we will return that anyway)
         Dim infoRefObj As pdfValue: Set infoRefObj = GetInfo(trailer)
-        Dim infoId As Long: infoId = -1
         If infoRefObj.valueType = PDF_ValueType.PDF_Reference Then
-            infoId = CLng(infoRefObj.Value)
+            Set m_Info = getObject(CLng(infoRefObj.Value), CLng(infoRefObj.generation), cacheObject:=False)
         'ElseIf info.valueType = PDF_ValueType.PDF_Object Then
+        'ElseIf info.valueType = PDF_ValueType.PDF_Null Then
+        'Else error, unexpected type
         End If
         
-        If objectCache.Exists(infoId) Then
-            Set m_Info = objectCache.Item(infoId)
-        Else
-            'Set m_Info = GetInfoObject(content, trailer, xrefTable)
-            Set m_Info = getObject(content, xrefTable, infoId)
-            'objectCache.Add m_Info.id, m_Info
-        End If
         Debug.Print BytesToString(m_Info.serialize())
     End If
 
@@ -203,13 +202,8 @@ Public Property Get Meta() As pdfValue
                 Dim pdfRefObj As pdfValue
                 Set pdfRefObj = rootCatalog.asDictionary.Item("/Metadata")
                 ' 1st try loading cached object, if that fails, try loading from raw content()
-                If objectCache.Exists(CLng(pdfRefObj.Value)) Then
-                    Set m_Meta = objectCache.Item(CLng(pdfRefObj.Value))
-                Else
-                    Set m_Meta = getObject(content, xrefTable, pdfRefObj.Value)
-                End If
+                Set m_Meta = getObject(CLng(pdfRefObj.Value), pdfRefObj.generation, cacheObject:=False)
                 Debug.Print BytesToString(m_Meta.serialize())
-                'objectCache.Add m_Meta.id, m_Meta
             Else
                 Debug.Print "No /Metadata object specified in root /Catalog"
             End If
@@ -237,7 +231,7 @@ Public Property Get pages() As pdfValue
             ' obj should now be a reference to our /Pages object
             If obj.valueType = PDF_ValueType.PDF_Reference Then
                 ' retrieve object (not reference) matching given obj reference's (id, generation) pair
-                Set m_Pages = getCachedObject(obj.Value, obj.generation)
+                Set m_Pages = getObject(CLng(obj.Value), obj.generation)
             ElseIf obj.valueType = PDF_ValueType.PDF_Object Then
                 ' ok, weird but whatever
                 Set m_Pages = obj
@@ -257,8 +251,65 @@ End Property
 
 
 ' returns matching object from PDF
-' will first try to find in objectCache, then uses cross reference table to load from content,
+' will first try to find in objectCache, then uses cross reference table to load from content(),
 ' otherwise returns pdf null object
+' Note: unless cacheObject is set to False, if successfully extracted object from content() then will add to object cache
+Public Function getObject(ByVal id As Long, ByVal generation As Long, Optional ByVal cacheObject As Boolean = True) As pdfValue
+    Dim obj As pdfValue
+    ' first try loading from our cache
+    Set obj = getCachedObject(id, generation)
+    ' if it wasn't there then try loading from content()
+    If obj.valueType = PDF_ValueType.PDF_Null Then
+        Set obj = pdfParseAndGetValues.getObject(content, xrefTable, id, sosCache)
+        If obj Is Nothing Then Set obj = New pdfValue
+        
+        ' if successfully loaded, update our object cache
+        If cacheObject And (obj.valueType <> PDF_ValueType.PDF_Null) Then
+            If objectCache.Exists(id) Then
+                ' we need to determine if same generation, presumably not or we would have retrieved it above
+                Dim dict As Dictionary
+                Dim curObj As pdfValue
+                Dim v As Variant
+                Set v = objectCache.Item(id)
+                If TypeName(v) = "pdfValue" Then
+                    Set curObj = objectCache.Item(id)
+                    If curObj.generation <> generation Then
+                        Set dict = New Dictionary
+                        dict.Add curObj.generation, curObj
+                        dict.Add generation, obj
+                        Set objectCache(id) = dict
+                        Set dict = Nothing
+                    Else
+                        Debug.Print "Internal Error! - id & generation the same but not?"
+                        Stop
+                    End If
+                    Set curObj = Nothing
+                ElseIf TypeName(v) = "Dictionary" Then
+                    ' assume may contain multiple generations, key'd by generation
+                    Set dict = v
+                    If dict.Exists(generation) Then
+                        Set dict(generation) = obj
+                    Else
+                        dict.Add generation, obj
+                    End If
+                    Set dict = Nothing
+                Else
+                    Debug.Print "Internal Error!"
+                    Stop
+                End If
+            Else
+                objectCache.Add id, obj
+            End If
+        End If
+    End If
+    
+    Set getObject = obj
+End Function
+
+
+' returns matching object from PDF
+' will first try to find in objectCache, if not found in cache then returns pdf null object
+' Does not attempt to load from raw pdf in content() via cross reference table
 Public Function getCachedObject(ByVal id As Long, ByVal generation As Long) As pdfValue
     Dim v As Variant
     ' return object, but verify matches expected generation
@@ -366,7 +417,7 @@ End Function
 ' will fail if loadPDF has not been called or content() array is not prefilled by other means
 ' True on success, false on any error
 Public Function parsePdf() As Boolean
-    GetObjectsInTree rootCatalog, content, xrefTable, objectCache
+    GetObjectsInTree rootCatalog, content, xrefTable, objectCache, sosCache
     
     ' /Info is in trailer, so won't be loaded as part of rootCatalog,
     ' Note first call to Info actually retreives, so need to: Set Info = GetInfoObject(content, trailer, xrefTable)
@@ -633,6 +684,7 @@ End Sub
 Private Sub Class_Initialize()
     On Error GoTo errHandler
     Set objectCache = New Dictionary
+    Set sosCache = New Dictionary
     Set xrefTable = NewXrefTable()
     Set rootCatalog = New pdfValue
     Set trailer = NewTrailer()
@@ -648,6 +700,7 @@ End Sub
 Private Sub Class_Terminate()
     On Error GoTo errHandler
     Set objectCache = Nothing
+    Set sosCache = Nothing
     Set xrefTable = Nothing
     Set rootCatalog = Nothing
     Set trailer = Nothing
