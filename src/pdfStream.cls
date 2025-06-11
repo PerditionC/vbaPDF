@@ -23,15 +23,15 @@ Public Property Get Length() As Long
     ' Length is stored in meta
     ' it should be same as size of data
     If Meta.Exists("/Length") Then
-        Length = CLng(Meta.Item("/Length"))
+        Length = CLng(Meta.Item("/Length").Value)
     End If
     
     On Error Resume Next
     Dim dataLen As Long
-    dataLen = UBound(data) - LBound(data)
+    dataLen = UBound(data) - LBound(data) + 1
     If Err.Number <> 9 Then ' array out of bounds, i.e. not initialized
         If Length <> dataLen Then
-            Debug.Print "Warning: data(0 to " & dataLen & ") array size does not match meta data /Length=" & Length & " value!"
+            Debug.Print "Warning: data(0 to " & dataLen - 1 & ") array size does not match meta data /Length=" & Length & " value!"
             Length = dataLen ' use size of actual data, it coudl be modified
         End If
     End If
@@ -39,7 +39,7 @@ End Property
 
 ' this will add/update /Length property in meta and resize data()
 Public Property Let Length(ByVal Count As Long)
-    Meta("/Length") = Count ' add or replace
+    Meta("/Length").Value = Count ' add or replace
     
     On Error Resume Next
     Dim dataLen As Long

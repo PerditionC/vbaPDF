@@ -22,7 +22,9 @@ End Sub
 Sub TestProblemPdfs()
     On Error GoTo errHandler
     Const basedir As String = "C:\Users\jeremyd\Downloads\"
-    Const filename As String = "2025 Request to Expunge Form pdf.pdf"
+    'Const filename As String = "2025 Request to Expunge Form pdf.pdf"
+    Const filename As String = "pdf-association.pdf20examples\pdf20-utf8-test.pdf"
+    
     
     ' create VBA object to work with PDF document
     Dim pdfDoc As pdfDocument
@@ -43,6 +45,13 @@ Sub TestProblemPdfs()
     End If
     
     Debug.Print pdfDoc.pages.asDictionary.Item("/Count").Value
+    
+    Dim obj As pdfValue
+    Set obj = pdfDoc.getObject(69, 0)
+    If obj.valueType = PDF_EndOfDictionary Then
+        Debug.Print obj.Value.Value.Length
+    End If
+    Stop
     
     Exit Sub
 errHandler:
@@ -125,3 +134,5 @@ Sub TestOrderPDFs()
         Debug.Print files(i)
     Next i
 End Sub
+
+

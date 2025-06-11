@@ -11,6 +11,30 @@ Public Declare PtrSafe Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (ByVa
 #End If
 
 
+' Converts a Byte() to a Unicode (UTF-16 / wide character) string
+Private Declare PtrSafe Function MultiByteToWideChar Lib "kernel32" (ByVal CodePage As Long, ByVal dwFlags As Long, ByVal lpMultiByteStr As LongPtr, ByVal cchMultiByte As Long, ByVal lpWideCharStr As LongPtr, ByVal cchWideChar As Long) As Long
+Private Enum CodePages
+    CP_UTF8 = 65001
+End Enum
+
+
+' Returns size (count of bytes) of a Byte() array
+' Note: returns -1 if unitialized
+Private Function ByteArraySize(bytes() As Byte) As Long
+    ' if array has been erased then any access to UBound will raise an Error
+    ' but if array is declared but not yet dimension, LBound() is 0 and UBound() is -1
+    On Error GoTo errHandler
+    If UBound(bytes) >= LBound(bytes) Then ' if not dim'd compares -1 to 0
+        ByteArraySize = UBound(bytes) - LBound(bytes)
+    End If
+    Exit Function
+errHandler:
+    ByteArraySize = -1
+End Function
+
+
+
+
 ' returns index into Byte() array that token starts at or -1 if no match
 Function FindToken(ByRef buffer() As Byte, ByRef token As String, Optional startAt As Long = -1, Optional searchBackward As Boolean = True) As Long
     Dim ndx As Long, i As Long
@@ -106,25 +130,31 @@ End Function
 
 
 ' updates offset to start of next non-whitespace index
-Function SkipWhiteSpace(ByRef bytes() As Byte, ByVal offset As Long) As Long
-#If False Then
-    Do While (IsWhiteSpace(Chr(bytes(offset))))
-        offset = offset + 1
-        If offset > UBound(bytes) Then Exit Do
-    Loop
-#Else
+' Note: also skips any comments %<blah>EOL
+Function SkipWhiteSpace(ByRef bytes() As Byte, ByVal offset As Long, Optional ByVal skipComments As Boolean = True) As Long
     Do While True
         If offset > UBound(bytes) Then Exit Do
         Select Case bytes(offset)
             Case 32, 10, 13, 9, 12
                 ' do nothing, keep looping
+            Case 37 '%
+                If skipComments Then
+                    ' loop until we reach a end of line <NL>
+                    Do While bytes(offset) <> 10
+                        offset = offset + 1
+                        If offset > UBound(bytes) Then Exit Do
+                        DoEvents
+                    Loop
+                Else ' not a whitespace so done
+                    Exit Do
+                End If
             Case Else
                 ' not a whitespace character, so done skipping
                 Exit Do
         End Select
         offset = offset + 1
+        DoEvents
     Loop
-#End If
 
     SkipWhiteSpace = offset
 End Function
@@ -300,10 +330,19 @@ Function readFile(ByVal filename As String, ByRef fileLen As Long) As Byte()
     Dim fileNum As Integer
     Dim content() As Byte
     
-    ' Open file and read content
+    ' Open file and determine size
     fileNum = FreeFile
     Open filename For Binary Access Read Shared As #fileNum
     fileLen = LOF(fileNum)
+    ' arbitrarily limit files to 512MB
+    If fileLen > 512& * 1024& * 1024& Then
+        'MsgBox "Warning exceeds supported file size!", vbOKOnly Or vbCritical, filename
+        Debug.Print "Warning exceeds supported file size! " & filename & " is " & (fileLen + 524288) \ (1024& * 1024&) & "MB"
+        fileLen = -1 * fileLen
+        Exit Function
+    End If
+    
+    ' allocate memory and read in data
     If fileLen > 0 Then ReDim content(fileLen - 1)
     Get #fileNum, , content
     
@@ -340,5 +379,24 @@ errHandler:
     Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
     Stop
     Resume
+End Function
+
+
+
+''' Return VBA "Unicode" string from byte array encoded in UTF-8
+' From: https://www.di-mgt.com.au/howto-convert-vba-unicode-to-utf8.html
+Public Function Utf8BytesToString(ByRef abUtf8Array() As Byte, Optional ByVal nBytes As Long = 0) As String
+    Dim nChars As Long
+    Dim strOut As String
+    Utf8BytesToString = ""
+    ' Catch uninitialized input array
+    If nBytes <= 0 Then nBytes = ByteArraySize(abUtf8Array)
+    If nBytes <= 0 Then Exit Function
+    ' Get number of characters in output string
+    nChars = MultiByteToWideChar(CodePages.CP_UTF8, 0&, VarPtr(abUtf8Array(0)), nBytes, 0&, 0&)
+    ' Dimension output buffer to receive string
+    strOut = String(nChars, 0)
+    nChars = MultiByteToWideChar(CodePages.CP_UTF8, 0&, VarPtr(abUtf8Array(0)), nBytes, StrPtr(strOut), nChars)
+    Utf8BytesToString = Left$(strOut, nChars)
 End Function
 

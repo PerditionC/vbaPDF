@@ -17,7 +17,7 @@ Enum PDF_ValueType
     ' to simplify processing, not one of the 9 basic types either
     PDF_Object      ' id generation obj << dictionary >> endobj
     PDF_Reference   ' indirect object
-    PDF_Comment
+    PDF_Comment     ' not used as comments skipped along with whitespace
     PDF_Trailer
     
     ' markers, no actual value returned
@@ -33,12 +33,9 @@ Function GetValueType(ByRef bytes() As Byte, ByVal offset As Long) As PDF_ValueT
     On Error GoTo errHandler
     GetValueType = PDF_ValueType.PDF_Null
     
+    offset = SkipWhiteSpace(bytes, offset)
+    If offset > UBound(bytes) Then Exit Function    ' return null type if end of data
     Dim token As String: token = Chr(bytes(offset))
-    Do While IsWhiteSpace(token)
-        offset = offset + 1
-        If offset > UBound(bytes) Then Exit Function    ' return null type if end of data
-        token = Chr(bytes(offset))
-    Loop
     
     Dim tmpStr As String
     Select Case LCase(token)
@@ -140,6 +137,48 @@ Function ProcessName(ByRef name As String) As String
 End Function
 
 
+' process a byte of string data, handles unicode or pdfDocEncoding
+Private Sub UpdateString(ByRef offset As Long, ByVal chrValue As Integer, ByRef tmpStr As String, ByRef strBuffer() As Byte, ByRef strLen As Long)
+    Select Case strLen
+        Case Is < 0 ' no BOM, just store character asis
+            tmpStr = tmpStr & Chr(chrValue)
+        Case 1 ' check next character continues BOM
+            If (chrValue = &HBB) Or (chrValue = &HFE) Then
+                strLen = 2
+                strBuffer(1) = chrValue
+            Else ' woops no BOM
+                tmpStr = Chr(strBuffer(0)) & Chr(chrValue)
+                strLen = -1
+            End If
+        Case 2 ' and is full BOM found
+            ' either begins UTF-16 data or 3rd byte of UTF-8 BOM
+            If chrValue = &HBF Then
+                strLen = 3
+                strBuffer(2) = chrValue
+            ElseIf strBuffer(0) = &HFF Then
+                Stop ' sorry UTF-16 not yest supported :-(
+            Else ' woops no BOM
+                tmpStr = Chr(strBuffer(0)) & Chr(strBuffer(1)) & Chr(chrValue)
+                strLen = -1
+            End If
+        Case Is >= 3
+            ' unicode, just store in our Byte() buffer (note: we overwrite BOM)
+            strBuffer(strLen - 3) = chrValue
+            strLen = strLen + 1
+            ' if UTF-16 then use ChrW (chrValue)
+        Case Else ' need to determine if UTF-8 or UTF-16BE BOM or not
+            If (chrValue = &HEF) Or (chrValue = &HFE) Then
+                strLen = 1
+                strBuffer(0) = chrValue
+            Else ' no BOM
+                strLen = -1 ' flag no BOM
+                tmpStr = Chr(chrValue)
+            End If
+    End Select
+    DoEvents
+End Sub
+
+
 ' returns a value loaded for a PDF
 ' updates offset to next non-whitespace byte after this value is loaded
 ' Note: meta is only used for stream object
@@ -147,19 +186,17 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional Meta As 
     On Error GoTo errHandler
     DoEvents
     Dim result As pdfValue: Set result = New pdfValue
+    Set GetValue = result
     result.id = 0
     result.generation = 0
     result.Value = Empty
     result.valueType = GetValueType(bytes, offset)
-    Set GetValue = result
-    
     If offset > UBound(bytes) Then Exit Function        ' return null type if end of daa
+    
     Dim token As String: token = Chr(bytes(offset))
-    Do While IsWhiteSpace(token)
-        offset = offset + 1
-        If offset > UBound(bytes) Then Exit Function    ' return null type if end of data
-        token = Chr(bytes(offset))
-    Loop
+    offset = SkipWhiteSpace(bytes, offset)
+    If offset > UBound(bytes) Then Exit Function    ' return null type if end of data
+    token = Chr(bytes(offset))
     
     Dim tmpStr As String
     Dim name As pdfValue, Value As pdfValue
@@ -182,7 +219,11 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional Meta As 
             result.Value = CDbl(tmpStr)
         Case PDF_ValueType.PDF_String
             ' (...) or <hex digits>
+            ' may have a UTF-8 BOM bytes 239, 187 and 191
+            ' or Unicode UTF-16 BOM bytes 255, 254
             tmpStr = vbNullString
+            Dim strBuffer(0 To 65535) As Byte ' max size pdf string value
+            Dim strLen As Long: strLen = 0
             If bytes(offset) = Asc("(") Then
                 offset = offset + 1
                 Do While bytes(offset) <> Asc(")")
@@ -191,6 +232,13 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional Meta As 
                         Select Case Chr(bytes(offset))
                             Case "n"
                                 tmpStr = tmpStr & vbLf
+                            ' \ immediately followed by newline treated as line continuation & ignored
+                            ' we treat \<CR><NL>, \<CR> and \<NL> the same (note \<NL><CR> treated as <CR> )
+                            Case Chr(13)
+                                ' line continuation, ignore line break, <CR> or <CR><NL>
+                                If bytes(offset + 1) = 10 Then offset = offset + 1
+                            Case Chr(10)
+                                ' line continuation, ignore line break
                             Case "r"
                                 tmpStr = tmpStr & vbCr
                             Case "t"
@@ -205,32 +253,58 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional Meta As 
                                 tmpStr = tmpStr & ")"
                             Case "("
                                 tmpStr = tmpStr & "("
+                            Case "0" To "9"                 ' octal
+                                Dim octStr As String: octStr = Chr(bytes(offset))
+                                Dim octVal As Long: octVal = 0
+                                Dim maxOctStrLen As Integer: maxOctStrLen = 3
+                                Do While (octStr >= "0") And (octStr <= "9") And (maxOctStrLen > 0)
+                                    maxOctStrLen = maxOctStrLen - 1 ' only 1 to 3 octal digits
+                                    octVal = (octVal * 8) + CLng(octStr)
+                                    offset = offset + 1
+                                    octStr = Chr(bytes(offset))
+                                Loop
+                                offset = offset - 1 ' so we don't skip a character
+                                'tmpStr = tmpStr & Chr(octVal)
+                                UpdateString offset, octVal, tmpStr, strBuffer, strLen
+                            Case Chr(27)    ' Esc 1B, flags encoding language and optionally country codes follow
+                                Dim langCode As String, cntryCode As String
+                                langCode = Chr(bytes(offset)) & Chr(bytes(offset + 1))
+                                offset = offset + 2
+                                If bytes(offset) <> 27 Then
+                                    cntryCode = Chr(bytes(offset)) & Chr(bytes(offset + 1))
+                                    offset = offset + 2
+                                End If
+                                If bytes(offset) = 27 Then
+                                    ' note: offset+1 done below to skip past this escape character
+                                    Debug.Print "Text found using " & langCode & cntryCode
+                                    Stop ' not currently supported
+                                Else
+                                    Debug.Print "Error! out of sync in text string, expecting Esc to mark end of lang-country specifier!"
+                                    Stop
+                                End If
+                            Case Chr(&HFF), Chr(&HFE)   ' string encoded as Unicode 16bit, high byte first
+                                Stop
                             Case Else
-                                ' TODO
+                                ' unknown/unexpected escape value
                                 Stop
                         End Select
                     Else
-                        tmpStr = tmpStr & Chr(bytes(offset))
+                        'tmpStr = tmpStr & Chr(bytes(offset))
+                        UpdateString offset, bytes(offset), tmpStr, strBuffer, strLen
                     End If
                     DoEvents
                     offset = offset + 1
                 Loop
                 offset = offset + 1 ' skip past ending ")"
-            Else
+            Else ' < hex encoded string >
                 offset = offset + 1
                 Do While bytes(offset) <> 62 'Asc(">")
                     ' get 2 hex digits, ignoring whitespace, may end with odd # of hex digits
-                    While IsWhiteSpace(bytes(offset))
-                        offset = offset + 1
-                        DoEvents
-                    Wend
+                    offset = SkipWhiteSpace(bytes, offset)
                     Dim HexStr As String
                     HexStr = Chr(bytes(offset))
                     offset = offset + 1
-                    While IsWhiteSpace(bytes(offset))
-                        offset = offset + 1
-                        DoEvents
-                    Wend
+                    offset = SkipWhiteSpace(bytes, offset)
                     If bytes(offset) <> 62 Then ' Asc(">")
                         HexStr = HexStr & Chr(bytes(offset))
                         offset = offset + 1
@@ -238,10 +312,17 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional Meta As 
                         HexStr = HexStr & "0"
                     End If
                     
-                    tmpStr = tmpStr & Chr(CLng("&H" & HexStr))
-                    DoEvents
+                    ' we need to determine if this a UTF8 string or not, and store to buffer if it is
+                    ' may have a UTF-8 BOM bytes 239, 187 and 191
+                    ' or Unicode UTF-16 BOM bytes 255, 254
+                    Dim hexValue As Integer: hexValue = CLng("&H" & HexStr)
+                    UpdateString offset, hexValue, tmpStr, strBuffer, strLen
                 Loop
                 offset = offset + 1 ' skip past ending ">"
+            End If
+            ' if string is encoded as UTF-8 then we need to convert it properly
+            If strLen > 0 Then
+                tmpStr = Utf8BytesToString(strBuffer, strLen - 3)
             End If
             result.Value = tmpStr
         Case PDF_ValueType.PDF_Array
@@ -377,6 +458,7 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional Meta As 
 errHandler:
     Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
     Stop
+    Resume
 End Function
 
 
@@ -389,9 +471,12 @@ Function GetXrefOffset(ByRef content() As Byte) As Long
     offset = FindToken(content, "startxref", searchBackward:=True)
     offset = SkipWhiteSpace(content, offset + Len("startxref"))
     GetXrefOffset = CLng(GetWord(content, offset))
-    ' should immediately be followed by end of file marker
-    Dim Value As pdfValue: Set Value = GetValue(content, offset)
-    If Value.valueType <> PDF_ValueType.PDF_Comment Then Stop ' error, expected "%%EOF"
+    ' should immediately be followed by end of file marker, EOF marker is a comment, so we can't GetValue as it will be skipped
+    offset = SkipWhiteSpace(content, offset, skipComments:=False)
+    If offset > UBound(content) Then Exit Function ' we allow invalid PDF documents that miss %%EOF but actually end after cross reference table
+    If Not IsMatch(BytesToString(content, offset, 5), "%%EOF") Then
+        MsgBox "PDF document missing %%EOF end of file marker, invalid PDF!", vbCritical Or vbOKOnly, "Warning - invalid document"
+    End If
     Exit Function
 errHandler:
     Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
@@ -637,123 +722,7 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
         
         ' we need the uncompressed (un-/Filter'd) data
         Dim rawData() As Byte
-#If True Then
         rawData = objStream.udata
-#Else
-        If objStream.Meta.Exists("/Filter") Then
-            ' TODO support all /Filter types
-            Dim filter As String
-            filter = objStream.Meta.Item("/Filter").Value
-            Select Case LCase(filter)
-                Case "/flatedecode"
-                    Dim startIndex As Long: startIndex = 2 ' skip past zlib wrapper to raw Deflate data
-                    Erase rawData   ' will be allocated by inflate call
-                    Dim outputLenOrOff As Long ' as count of bytes
-                    
-                    ' Note: libdeflate_inflate arguments are byVal, we expect them be byRef
-                    'libdeflate_inflate objStream.data, startIndex, rawData, outputLenOrOff
-                    If Not inflate2(objStream.data, rawData, startIndex, outputLenOrOff) Then
-                        Debug.Print "Error decompressing!"
-                        Stop
-                    End If
-                    
-                    ' do we need to decode uncompressed stream?
-                    Dim predictor As Long, columns As Long
-                    ' set default values if not otherwise specified
-                    predictor = 1: columns = 1
-                    If objStream.Meta.Exists("/DecodeParms") Then
-                        Dim pdfV As pdfValue
-                        Set pdfV = objStream.Meta.Item("/DecodeParms")
-                        Dim decodeParms As Dictionary
-                        Set decodeParms = pdfV.Value
-                        If decodeParms.Exists("/Predictor") Then
-                            Set pdfV = decodeParms.Item("/Predictor")
-                            predictor = pdfV.Value
-                        End If
-                        ' should only be supplied if predictor > 1, but we can load value regardless, only used if predictor > 1
-                        If decodeParms.Exists("/Columns") Then
-                            Set pdfV = decodeParms.Item("/Columns")
-                            columns = pdfV.Value
-                        End If
-                        Set pdfV = Nothing
-                    End If
-                    ' if predictor > 1 then we need to reverse differencing done prior to compression/encoding
-                    Dim rowOffset As Long, rowIndex As Long
-                    Select Case predictor
-                        Case 1 ' default no prediction
-                            ' nothing to do
-                        Case 2 ' TIFF predictor
-                            Stop ' not implemented
-                        
-                        ' Note: regardless of predictor specified, if PNG filter then each row should have a predicator tag, need not match predictor value
-                        ' 10 through 15 are defined in PNG RFC 2083 specification, see Chapter 6, Filters
-                        Case 10, 11, 12, 13, 14, 15
-                            ' actual data is smaller, we need to buffer our data
-                            Dim buffer() As Byte
-                            ReDim buffer(0 To UBound(rawData))
-                            Dim bufferIndex As Long
-                            ' loop through all the data, assuming each row is columns bytes wide
-                            ' note: each row has columns bytes of data + 1 for PNG filter type, except 1st row
-                            columns = columns + 1
-                            Dim rowPredictor As Long
-                            For rowIndex = LBound(rawData) To UBound(rawData)
-                                'rowOffset = LBound(rawData) + ((rowIndex - LBound(rawData)) Mod columns)
-                                rowOffset = rowIndex Mod columns ' simplify since LBound(rawData) = 0
-                                ' get this rows predicator tag, Note: 1st row doesn't have tag byte
-                                If rowOffset = 0 Then ' this byte is a tag byte for new row
-                                    rowPredictor = rawData(rowIndex)
-                                    ' advance to actual data
-                                    rowIndex = rowIndex + 1
-                                    If rowIndex > UBound(rawData) Then Exit For
-                                End If
-                                                        
-                                Select Case rowPredictor
-                                    Case 0, 10 ' PNG, None on all rows
-                                        buffer(bufferIndex) = rawData(rowIndex)
-                                    Case 1, 11 ' PNG, Sub on all rows
-                                        Stop ' no implemented
-                                    Case 2, 12 ' PNG, Up on all rows
-                                        If rowIndex >= columns Then ' assume 1st row, with prior row values always 0, so no change to values
-                                            ' assume rawData(rowIndex - columns) is the data byte 1 row Up, add that to current difference value at rowIndex
-                                            'buffer(bufferIndex) = (CLng(rawData(rowIndex - columns)) + CLng(rawData(rowIndex))) Mod 256
-                                            'Debug.Print Hex(buffer(bufferIndex)) & " - ";
-                                            buffer(bufferIndex) = (CLng(buffer(bufferIndex - (columns - 1))) + CLng(rawData(rowIndex))) Mod 256
-                                            'Debug.Print Hex(buffer(bufferIndex))
-                                        Else
-                                            buffer(bufferIndex) = rawData(rowIndex)
-                                        End If
-                                    Case 3, 13 ' PNG, Average on all rows
-                                        Stop ' no implemented
-                                    Case 4, 14 ' PNG, Paeth on all rows
-                                        Stop ' no implemented
-                                    Case 15 ' PNG, Optimal (per row determination)
-                                        Stop ' no implemented, error not valid PNG filter value
-                                            
-                                    Case Else
-                                        Debug.Print "Error: unsupported or invalid predictor found - " & predictor
-                                        Stop
-                                End Select ' rowPredictor
-                                
-                                bufferIndex = bufferIndex + 1
-                                DoEvents
-                            Next rowIndex
-                            ' swap out with our smaller buffer omitting predicator data
-                            rawData = buffer
-                            ReDim Preserve rawData(0 To (bufferIndex - 1))
-                            
-                        Case Else
-                            Debug.Print "Error: unsupported or invalid predictor found - " & predictor
-                            Stop
-                    End Select ' predictor
-                Case "/lzwdecode"
-                    Stop ' TODO
-                Case Else
-                    Stop ' not yet supported!
-            End Select
-        Else
-            rawData = objStream.data
-        End If
-#End If
         
         Dim objOffset As Long
         objOffset = 0
@@ -804,7 +773,6 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
                     ' it just means this object was updated (replaced) in the pdf
                     If entry.id <> 0 Then
                         Debug.Print "Warning: duplicate obj " & entry.id & " found!"
-                        'Stop
                     End If
                 Else
                     xrefTable.Add entry.id, entry

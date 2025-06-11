@@ -342,8 +342,8 @@ Public Function loadPdf(ByVal pdfFilename As String) As Boolean
     If (InStr(1, pdfFilename, "\", vbBinaryCompare) > 0) Or _
        (InStr(1, pdfFilename, "/", vbBinaryCompare) > 0) Then
         Dim position1 As Long, position2 As Long
-        position1 = InStr(1, pdfFilename, "\", vbBinaryCompare)
-        position2 = InStr(1, pdfFilename, "/", vbBinaryCompare)
+        position1 = InStrRev(pdfFilename, "\", -1, vbBinaryCompare)
+        position2 = InStrRev(pdfFilename, "/", -1, vbBinaryCompare)
         If position1 >= position2 Then
             filename = Mid(pdfFilename, position1 + 1)
             filepath = Left(pdfFilename, position1)
@@ -362,12 +362,9 @@ Public Function loadPdf(ByVal pdfFilename As String) As Boolean
         MsgBox "Error reading in pdf!", vbOKOnly Or vbCritical, pdfFilename
         Exit Function
     End If
-    If fileLen > 100& * 1024& * 1024& Then ' arbitrarily limit files to 100GB
-        MsgBox "Warning pdf exceeds supported file size!", vbOKOnly Or vbCritical, pdfFilename
-        Exit Function
-    End If
     
     ' validate probably a PDF file and get header version (more recent version# may be specified in root Catalog)
+    ' PDF 2.0 allows
     Dim headerVersion As String ' Note: we have to pass a String object as Me.Header won't save changes
     If Not GetPdfHeader(content, headerVersion) Then
         Erase content
