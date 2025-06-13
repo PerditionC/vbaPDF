@@ -193,10 +193,9 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional Meta As 
     result.valueType = GetValueType(bytes, offset)
     If offset > UBound(bytes) Then Exit Function        ' return null type if end of daa
     
-    Dim token As String: token = Chr(bytes(offset))
     offset = SkipWhiteSpace(bytes, offset)
     If offset > UBound(bytes) Then Exit Function    ' return null type if end of data
-    token = Chr(bytes(offset))
+    Dim token As String: token = Chr(bytes(offset))
     
     Dim tmpStr As String
     Dim name As pdfValue, Value As pdfValue
@@ -221,39 +220,69 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional Meta As 
             ' (...) or <hex digits>
             ' may have a UTF-8 BOM bytes 239, 187 and 191
             ' or Unicode UTF-16 BOM bytes 255, 254
+            ' Note: we do not process the language[country] escaped information
+            ' if provided, the string until end or next 1B escape code will be in
+            ' indicated language (default Latin1 or Document/Page level Lang used otherwise
+            ' Format: ESC LANG [COUNTRY] ESC e.g. \033enUS\033USING language escape
+            ' and \033en\033USING language escape both indicate the string USING language escape
+            ' is en (English) with the first en-US and the later country unspecified.
+            ' Per the spec, XX should be used for unknown country or preferable not included.
+            ' Language is always 2 characters and if provided country is 2 characters
+            ' so either \033XX\033 or \033XXYY\033 where XX=language and YY=country
+            '    Case 27    ' Esc 1B, flags encoding language and optionally country codes follow
+            '        langCode = tmpStr(offset) & tmpStr(offset + 1))
+            '        offset = offset + 2
+            '        If Asc(tmpStr(offset)) <> 27 Then
+            '            cntryCode = tmpStr(offset) & tmpStr(offset + 1)
+            '            offset = offset + 2
+            '        End If
+            '        If Asc(tmpStr(offset)) = 27 Then
+            '            Debug.Print "Text found using " & langCode & cntryCode
+            '        Else
+            '            Debug.Print "Error! out of sync in text string, expecting Esc to mark end of lang-country specifier!"
+            '        End If
             tmpStr = vbNullString
             Dim strBuffer(0 To 65535) As Byte ' max size pdf string value
             Dim strLen As Long: strLen = 0
-            If bytes(offset) = Asc("(") Then
+            If bytes(offset) = 40 Then ' Asc("(")
                 offset = offset + 1
-                Do While bytes(offset) <> Asc(")")
-                    If bytes(offset) = Asc("\") Then ' escaped value
+                ' TODO only need to escape unbalanced ), so need to keep track of balanced ()
+                Do While bytes(offset) <> 41 ' Asc(")")
+                    If bytes(offset) = 92 Then ' Asc("\") then escaped value
                         offset = offset + 1
-                        Select Case Chr(bytes(offset))
-                            Case "n"
-                                tmpStr = tmpStr & vbLf
+                        Select Case bytes(offset)
+                            Case 110 ' Asc("n")
+                                strBuffer(strLen) = 10 ' Asc(vbLf)
+                                strLen = strLen + 1
                             ' \ immediately followed by newline treated as line continuation & ignored
                             ' we treat \<CR><NL>, \<CR> and \<NL> the same (note \<NL><CR> treated as <CR> )
-                            Case Chr(13)
+                            Case 13 ' Asc(vbCr)
                                 ' line continuation, ignore line break, <CR> or <CR><NL>
                                 If bytes(offset + 1) = 10 Then offset = offset + 1
-                            Case Chr(10)
+                            Case 10 ' Asc(vbLf)
                                 ' line continuation, ignore line break
-                            Case "r"
-                                tmpStr = tmpStr & vbCr
-                            Case "t"
-                                tmpStr = tmpStr & vbTab
-                            Case "f"
-                                tmpStr = tmpStr & Chr(&HC)  ' formfeed
-                            Case "b"
-                                tmpStr = tmpStr & Chr(&H8)  ' backspace
-                            Case "\"
-                                tmpStr = tmpStr & "\"
-                            Case ")"
-                                tmpStr = tmpStr & ")"
-                            Case "("
-                                tmpStr = tmpStr & "("
-                            Case "0" To "9"                 ' octal
+                            Case 114 ' Asc("r")
+                                strBuffer(strLen) = vbCr
+                                strLen = strLen + 1
+                            Case 116 ' Asc("t")
+                                strBuffer(strLen) = vbTab
+                                strLen = strLen + 1
+                            Case 102 ' Asc("f")
+                                strBuffer(strLen) = &HC  ' formfeed
+                                strLen = strLen + 1
+                            Case 98  ' Asc("b")
+                                strBuffer(strLen) = &H8  ' backspace
+                                strLen = strLen + 1
+                            Case 92  ' Asc("\")
+                                strBuffer(strLen) = 92   ' "\"
+                                strLen = strLen + 1
+                            Case 41  ' Asc(")")
+                                strBuffer(strLen) = 41   ' ")"
+                                strLen = strLen + 1
+                            Case 40  ' Asc("(")
+                                strBuffer(strLen) = 40   ' "("
+                                strLen = strLen + 1
+                            Case 48 To 57 ' Asc("0") To Asc("9")    ' octal
                                 Dim octStr As String: octStr = Chr(bytes(offset))
                                 Dim octVal As Long: octVal = 0
                                 Dim maxOctStrLen As Integer: maxOctStrLen = 3
@@ -264,33 +293,15 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional Meta As 
                                     octStr = Chr(bytes(offset))
                                 Loop
                                 offset = offset - 1 ' so we don't skip a character
-                                'tmpStr = tmpStr & Chr(octVal)
-                                UpdateString offset, octVal, tmpStr, strBuffer, strLen
-                            Case Chr(27)    ' Esc 1B, flags encoding language and optionally country codes follow
-                                Dim langCode As String, cntryCode As String
-                                langCode = Chr(bytes(offset)) & Chr(bytes(offset + 1))
-                                offset = offset + 2
-                                If bytes(offset) <> 27 Then
-                                    cntryCode = Chr(bytes(offset)) & Chr(bytes(offset + 1))
-                                    offset = offset + 2
-                                End If
-                                If bytes(offset) = 27 Then
-                                    ' note: offset+1 done below to skip past this escape character
-                                    Debug.Print "Text found using " & langCode & cntryCode
-                                    Stop ' not currently supported
-                                Else
-                                    Debug.Print "Error! out of sync in text string, expecting Esc to mark end of lang-country specifier!"
-                                    Stop
-                                End If
-                            Case Chr(&HFF), Chr(&HFE)   ' string encoded as Unicode 16bit, high byte first
-                                Stop
+                                strBuffer(strLen) = octVal
+                                strLen = strLen + 1
                             Case Else
                                 ' unknown/unexpected escape value
                                 Stop
                         End Select
                     Else
-                        'tmpStr = tmpStr & Chr(bytes(offset))
-                        UpdateString offset, bytes(offset), tmpStr, strBuffer, strLen
+                        strBuffer(strLen) = bytes(offset)
+                        strLen = strLen + 1
                     End If
                     DoEvents
                     offset = offset + 1
@@ -312,17 +323,44 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional Meta As 
                         HexStr = HexStr & "0"
                     End If
                     
-                    ' we need to determine if this a UTF8 string or not, and store to buffer if it is
-                    ' may have a UTF-8 BOM bytes 239, 187 and 191
-                    ' or Unicode UTF-16 BOM bytes 255, 254
                     Dim hexValue As Integer: hexValue = CLng("&H" & HexStr)
-                    UpdateString offset, hexValue, tmpStr, strBuffer, strLen
+                    strBuffer(strLen) = hexValue
+                    strLen = strLen + 1
+                    
+                    DoEvents
                 Loop
                 offset = offset + 1 ' skip past ending ">"
             End If
-            ' if string is encoded as UTF-8 then we need to convert it properly
-            If strLen > 0 Then
-                tmpStr = Utf8BytesToString(strBuffer, strLen - 3)
+            ' we now have a byte buffer of values 0-255, we need to determine if
+            ' encoding is pdfDocEncoding, UTF-8, or UTF-16 (should be BE but apparently LE also used)
+            ' UTF-8 has BOM bytes 239, 187 and 191
+            ' Unicode UTF-16 has BOM bytes 255, 254 for BigEndian and 254, 255 for LittleEndian
+            ' Note: to simplify and not access bytes outside range we get 1st 3 bytes or leave as 0
+            Dim b1 As Byte, b2 As Byte, b3 As Byte
+            If strLen >= 1 Then b1 = strBuffer(0)
+            If strLen >= 2 Then b2 = strBuffer(1)
+            If strLen >= 3 Then b3 = strBuffer(2)
+            If (b1 = 239) And (b2 = 187) And (b3 = 191) Then ' UTF-8
+                tmpStr = Utf8BytesToString(strBuffer, strLen)
+                tmpStr = Mid(tmpStr, 2) ' strip BOM
+            ElseIf (b1 = 254) And (b2 = 255) Then ' UTF-16BE
+                Dim ndx As Long
+                For ndx = 2 To strLen - 1
+                    Dim chrVal As Integer
+                    chrVal = strBuffer(ndx)
+                    If (ndx + 1) <= UBound(strBuffer) Then chrVal = chrVal + (strBuffer(ndx + 1) * 256)
+                    tmpStr = tmpStr & ChrW(chrVal)
+                Next ndx
+            ElseIf (b1 = 255) And (b2 = 254) Then ' UTF-16LE
+                tmpStr = strBuffer  ' VBA supports converting unicode byte array to string *** TODO verify this if > ASCII
+                tmpStr = Mid(tmpStr, 2) ' strip BOM
+            Else ' pdfDocEncoding
+                'tmpStr = StrConv(strBuffer, vbUnicode)
+                tmpStr = vbNullString
+                Dim ndx2 As Long
+                For ndx2 = 0 To strLen - 1
+                    tmpStr = tmpStr & Chr(strBuffer(ndx2))
+                Next
             End If
             result.Value = tmpStr
         Case PDF_ValueType.PDF_Array

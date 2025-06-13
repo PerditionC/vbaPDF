@@ -13,6 +13,9 @@ Public Declare PtrSafe Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (ByVa
 
 ' Converts a Byte() to a Unicode (UTF-16 / wide character) string
 Private Declare PtrSafe Function MultiByteToWideChar Lib "kernel32" (ByVal CodePage As Long, ByVal dwFlags As Long, ByVal lpMultiByteStr As LongPtr, ByVal cchMultiByte As Long, ByVal lpWideCharStr As LongPtr, ByVal cchWideChar As Long) As Long
+' Converts a Unicode (UTF-16 / wide character) string to a Byte()
+Private Declare PtrSafe Function WideCharToMultiByte Lib "kernel32" (ByVal CodePage As Long, ByVal dwFlags As Long, ByVal lpWideCharStr As LongPtr, ByVal cchWideChar As Long, ByVal lpMultiByteStr As LongPtr, ByVal cbMultiByte As Long, ByVal lpDefaultChar As Long, ByVal lpUsedDefaultChar As Long) As Long
+
 Private Enum CodePages
     CP_UTF8 = 65001
 End Enum
@@ -199,21 +202,60 @@ Function BytesToString(ByRef bytes() As Byte, Optional offset As Long = 0, Optio
 End Function
 
 
+''' Return VBA "Unicode" string from byte array encoded in UTF-8
+' From: https://www.di-mgt.com.au/howto-convert-vba-unicode-to-utf8.html
+Public Function Utf8BytesToString(ByRef abUtf8Array() As Byte, Optional ByVal nBytes As Long = -1) As String
+    Dim nChars As Long
+    Dim strOut As String
+    Utf8BytesToString = ""
+    ' Catch uninitialized input array
+    If nBytes <= 0 Then nBytes = ByteArraySize(abUtf8Array)
+    If nBytes <= 0 Then Exit Function
+    ' Get number of characters in output string
+    nChars = MultiByteToWideChar(CodePages.CP_UTF8, 0&, VarPtr(abUtf8Array(0)), nBytes, 0&, 0&)
+    ' Dimension output buffer to receive string
+    strOut = String(nChars, 0)
+    nChars = MultiByteToWideChar(CodePages.CP_UTF8, 0&, VarPtr(abUtf8Array(0)), nBytes, StrPtr(strOut), nChars)
+    Utf8BytesToString = Left$(strOut, nChars)
+End Function
+
+
 ' Helper function to convert string to byte array (0..N-1)
 Function StringToBytes(str As String) As Byte()
-    Dim i As Long
-    Dim bytes() As Byte
     If Len(str) < 1 Then
-        ReDim bytes(0)
+        StringToBytes = vbNullString
     Else
-        ReDim bytes(Len(str) - 1)
+        StringToBytes = StrConv(str, vbFromUnicode) ' Note only low bytes, mangles any Unicode character > 255, same as Asc() to Byte would
     End If
+End Function
+
+
+' Helper to add a UTF-8 BOM to beginning of a Byte() array
+Function AddUtf8BOM(ByRef bytes() As Byte) As Byte()
+    Dim ucBytes() As Byte
+    ReDim ucBytes(0 To UBound(bytes) + 3) ' +3 for UTF-8 BOM
+    ' UTF-8 BOM  239, 187 and 191 in decimal (357, 273, 277 in octal and EF, BB, BF hexadecimal).
+    ucBytes(0) = 239: ucBytes(1) = 187: ucBytes(2) = 191
+    CopyBytes bytes, ucBytes, 0, 3
+    AddUtf8BOM = ucBytes
+End Function
     
-    For i = 1 To Len(str)
-        bytes(i - 1) = Asc(Mid(str, i, 1))
-        DoEvents
-    Next i
-    StringToBytes = bytes
+''' Return byte array with VBA "Unicode" string encoded in UTF-8
+' Optionally include UTF-8 Byte Order Mark
+' From: https://www.di-mgt.com.au/howto-convert-vba-unicode-to-utf8.html
+Public Function StringToUtf8Bytes(ByRef strInput As String, Optional ByVal BOM As Boolean = False) As Byte()
+    Dim nBytes As Long
+    Dim abBuffer() As Byte
+    ' Catch empty or null input string
+    StringToUtf8Bytes = vbNullString
+    If Len(strInput) < 1 Then Exit Function
+    ' Get length in bytes *including* terminating null
+    nBytes = WideCharToMultiByte(CodePages.CP_UTF8, 0&, ByVal StrPtr(strInput), -1, 0&, 0&, 0&, 0&)
+    ' We don't want the terminating null in our byte array, so ask for `nBytes-1` bytes
+    ReDim abBuffer(nBytes - 2)  ' NB ReDim with one less byte than you need (0 to (nBytes-1)-1)
+    nBytes = WideCharToMultiByte(CodePages.CP_UTF8, 0&, ByVal StrPtr(strInput), -1, ByVal VarPtr(abBuffer(0)), nBytes - 1, 0&, 0&)
+    If BOM Then abBuffer = AddUtf8BOM(abBuffer)
+    StringToUtf8Bytes = abBuffer
 End Function
 
 
@@ -380,23 +422,3 @@ errHandler:
     Stop
     Resume
 End Function
-
-
-
-''' Return VBA "Unicode" string from byte array encoded in UTF-8
-' From: https://www.di-mgt.com.au/howto-convert-vba-unicode-to-utf8.html
-Public Function Utf8BytesToString(ByRef abUtf8Array() As Byte, Optional ByVal nBytes As Long = 0) As String
-    Dim nChars As Long
-    Dim strOut As String
-    Utf8BytesToString = ""
-    ' Catch uninitialized input array
-    If nBytes <= 0 Then nBytes = ByteArraySize(abUtf8Array)
-    If nBytes <= 0 Then Exit Function
-    ' Get number of characters in output string
-    nChars = MultiByteToWideChar(CodePages.CP_UTF8, 0&, VarPtr(abUtf8Array(0)), nBytes, 0&, 0&)
-    ' Dimension output buffer to receive string
-    strOut = String(nChars, 0)
-    nChars = MultiByteToWideChar(CodePages.CP_UTF8, 0&, VarPtr(abUtf8Array(0)), nBytes, StrPtr(strOut), nChars)
-    Utf8BytesToString = Left$(strOut, nChars)
-End Function
-

@@ -142,7 +142,7 @@ Public Property Get Info() As pdfValue
         'Else error, unexpected type
         End If
         
-        Debug.Print BytesToString(m_Info.serialize())
+        Debug.Print "/Info=" & BytesToString(m_Info.serialize())
     End If
 
     Set Info = m_Info
@@ -477,7 +477,6 @@ Function SavePdfHeader(ByRef pdfFilename As String, ByRef offset As Long, Option
     outputFileNum = FreeFile
     Open pdfFilename For Binary Access Write Lock Write As #outputFileNum
     
-    
     Const defHeader As String = "%PDF-1.7" & vbNewLine
     If IsBlank(Header) Then Header = defHeader
     offset = PutString(outputFileNum, Header)
@@ -485,8 +484,12 @@ Function SavePdfHeader(ByRef pdfFilename As String, ByRef offset As Long, Option
     SavePdfHeader = outputFileNum
     Exit Function
 errHandler:
-    Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
-    Stop
+    If Err.Number = 70 Then ' Permission denied
+        If (6 = MsgBox("File in use or permission denied, close file if open and retry?", vbYesNo Or vbQuestion, pdfFilename)) Then Resume ' 6=Yes
+    Else
+        Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
+        Stop
+    End If
 End Function
 
 ' save a single PDF object

@@ -46,7 +46,71 @@ errHandler:
 End Function
 
 
-'
+' Helper function to convert pdf string to byte array (0..N-1)
+' escaping values as needed
+Private Function pdfStringToBytes(ByRef str As String, Optional ByVal asHex As Boolean = False) As Byte()
+    On Error GoTo errHandler
+    Dim strLen As Long
+    Dim ucBytes() As Byte, bytes() As Byte
+    strLen = Len(str)
+    If strLen < 1 Then
+        pdfStringToBytes = StringToBytes("()") ' empty PDF string
+        Exit Function
+    End If
+    
+    ' we need to check if any Unicode values and if so we encode in UTF-8
+    ' to avoid more expensive check if >255 value used, we simply always encode as UTF-8 unless ASCII (all values < 128)
+    ucBytes = StringToUtf8Bytes(str, BOM:=False)  ' Note: if only ASCII then equivalent to UTF-8 byte array
+    If UBound(ucBytes) > strLen Then ucBytes = AddUtf8BOM(ucBytes)    ' something >128 and had to be expanded to multiple bytes
+    
+    Dim ndx As Long
+    ' now determine if we are returning bytes as (string) or <## ## ##> format
+    If asHex Then
+        ' we need space for <## > assume 3 bytes per byte + 2 for enclosing <>
+        ReDim bytes(0 To ((UBound(ucBytes) + 1) * 3) + 1)
+        bytes(0) = Asc("<")
+        bytes(UBound(bytes)) = Asc(">")
+        For ndx = 0 To UBound(ucBytes)
+            Dim hexValue As String
+            hexValue = Hex(ucBytes(ndx))
+            If Len(hexValue) > 1 Then
+                bytes((ndx * 3) + 1) = Asc(Left(hexValue, 1))
+            Else
+                bytes((ndx * 3) + 1) = &H30 ' Asc("0")
+            End If
+            bytes((ndx * 3) + 2) = Asc(Right(hexValue, 1))
+            bytes((ndx * 3) + 3) = &H20 ' Asc(" ")
+        Next ndx
+    Else
+        ReDim bytes(0 To UBound(ucBytes) + 2)
+        bytes(0) = Asc("(")
+        bytes(UBound(bytes)) = Asc(")")
+        'CopyBytes ucBytes, bytes, 0, 1
+        ' we need to escape ) and \ characters (but only unbalanced ) actually need escaping)
+        Dim byteNdx As Long: byteNdx = 1
+        For ndx = 0 To UBound(ucBytes)
+            ' for now slow, we resize on every escaping
+            If (ucBytes(ndx) = 41) Or (ucBytes(ndx) = 92) Then  ' Asc(")") or Asc("\")
+                ReDim Preserve bytes(0 To UBound(bytes) + 1)
+                bytes(byteNdx) = 92 ' Asc("\")
+                byteNdx = byteNdx + 1
+            End If
+            ' copy over byte, may be preceed by \ if needed
+            bytes(byteNdx) = ucBytes(ndx)
+            byteNdx = byteNdx + 1
+        Next ndx
+    End If
+    
+    pdfStringToBytes = bytes
+    Exit Function
+errHandler:
+    Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
+    Stop
+    Resume
+End Function
+
+
+' convert pdf Value (Me) into a Byte() array as stored in pdf file
 Function serialize(Optional ByVal baseId As Long = 0) As Byte()
     On Error GoTo errHandler
     Dim Value As pdfValue: Set Value = Me
@@ -74,8 +138,10 @@ Function serialize(Optional ByVal baseId As Long = 0) As Byte()
             objStr = CDbl(Value.Value) ' dont' format as we want all current digits stored, it won't add extra 0s anyway
             ' ensure has .0 if whole number
             If InStr(1, objStr, ".", vbBinaryCompare) < 1 Then objStr = objStr & ".0"
-        Case PDF_ValueType.PDF_String ' TODO escape )
-            objStr = "(" & Value.Value & ")"
+        Case PDF_ValueType.PDF_String
+            ' convert to bytes and escape values as needed
+            IsBytes = True
+            objBytes = pdfStringToBytes(Value.Value)
         Case PDF_ValueType.PDF_Array
             objStr = "[ "
             firstPass = True
