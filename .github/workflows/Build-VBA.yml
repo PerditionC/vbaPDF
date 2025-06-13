@@ -1,0 +1,43 @@
+name: Build VBA
+on:
+  - workflow_dispatch
+
+permissions:
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v4
+      - name: "Build VBA-Enabled Documents"
+        id: build_vba
+        uses: DecimalTurn/VBA-Build@0e9bb22735194c1d7d6ebe30367a623a17e64cc1 #v1.1.0
+        with:
+          source-dir: "./src"
+        timeout-minutes: 10
+      - name: "Display Chocolatey logs in case of Office install failure"
+        if: failure() && steps.build_vba.outcome == 'failure'
+        run: |
+          if (Test-Path -Path "C:\ProgramData\chocolatey\logs\chocolatey.log") {
+            Write-Host "============ Chocolatey Log Contents ============"
+            Get-Content -Path "C:\ProgramData\chocolatey\logs\chocolatey.log"
+            Write-Host "================================================="
+          } else {
+            Write-Host "Chocolatey log file not found at C:\ProgramData\chocolatey\logs\chocolatey.log"
+          }
+        shell: pwsh
+      - name: "Upload Build Artifact"
+        uses: actions/upload-artifact@v4
+        id: "upload"
+        with:
+          name: "VBA-Enabled-Documents"
+          path: "./src/out/*"
+          if-no-files-found: warn
+      - name: "Attestation"
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: "VBA-Enabled-Documents"
+          subject-digest: sha256:${{ steps.upload.outputs.artifact-digest }}
