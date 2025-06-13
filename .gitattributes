@@ -1,10 +1,24 @@
+# let git decide on line ending conversions by default
 * text eol=auto
-*.bat text eol=crlf
+
+# shell scripts (.bat, .sh)
+*.[bB][aA][tT] text eol=crlf
 *.sh text eol=lf
 .github/workflows/*.yml text eol=lf
 
-*.bas text eol=crlf
-*.cls text eol=crlf
-*.frm text eol=crlf
-*.frx binary
-*.xlsm binary
+# VBA sources (.bas, .cls, .frm, .frx)
+*.[bB][aA][sS] text eol=crlf
+*.[cC][lL][sS] text eol=crlf
+*.[fF][rR][mM] text eol=crlf
+*.[fF][rR][xX] binary
+
+# Excel documents (.xla, .xlam, .xls, .xlsb, .xlsm, .xlsx)
+*.[xX][lL][aA] binary
+*.[xX][lL][aA][mM] binary
+*.[xX][lL][sS] binary
+*.[xX][lL][sS][bB] binary
+*.[xX][lL][sS][mM] binary
+*.[xX][lL][sS][xX] binary
+
+# Portable Document Format (.pdf)
+*.[pP][dD][fF] diff=astextplain
