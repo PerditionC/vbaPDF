@@ -125,11 +125,11 @@ Function ProcessName(ByRef name As String) As String
     Dim ndx As Long
     ndx = InStr(1, name, "#", vbBinaryCompare)
     If ndx > 0 Then
-        Dim s As String, N As Long
+        Dim s As String, n As Long
         ProcessName = Left(name, ndx - 1)
         s = Mid(name, ndx + 1, 2) ' get hex digits
-        N = CLng("&H" & s) ' convert from hex to Long
-        s = ProcessName & Chr(N) & Mid(name, ndx + 3) ' combine with hex digit as character
+        n = CLng("&H" & s) ' convert from hex to Long
+        s = ProcessName & Chr(n) & Mid(name, ndx + 3) ' combine with hex digit as character
         ProcessName = ProcessName(s) ' for now just recursively call to handle multiple encoded values, really should be a loop!
     Else
         ProcessName = name
@@ -246,8 +246,17 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional Meta As 
             Dim strLen As Long: strLen = 0
             If bytes(offset) = 40 Then ' Asc("(")
                 offset = offset + 1
-                ' TODO only need to escape unbalanced ), so need to keep track of balanced ()
-                Do While bytes(offset) <> 41 ' Asc(")")
+                ' only need to escape unbalanced ), so need to keep track of balanced ()
+                ' Note: could see ((\)) or (\(\))
+                Dim openParenthesis As Integer
+                Do While (openParenthesis > 0) Or (bytes(offset) <> 41) ' Asc(")") - if not open (, then end of string found
+                    ' otherwise if ( or ) then update our tracking, but otherwise treat as normal character in string
+                    If (bytes(offset) = 40) Then ' (
+                        openParenthesis = openParenthesis + 1
+                    ElseIf (bytes(offset) = 41) Then ' )
+                        openParenthesis = openParenthesis - 1
+                    End If
+                    
                     If bytes(offset) = 92 Then ' Asc("\") then escaped value
                         offset = offset + 1
                         Select Case bytes(offset)
@@ -279,9 +288,11 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional Meta As 
                             Case 41  ' Asc(")")
                                 strBuffer(strLen) = 41   ' ")"
                                 strLen = strLen + 1
+                                openParenthesis = openParenthesis - 1
                             Case 40  ' Asc("(")
                                 strBuffer(strLen) = 40   ' "("
                                 strLen = strLen + 1
+                                openParenthesis = openParenthesis + 1
                             Case 48 To 57 ' Asc("0") To Asc("9")    ' octal
                                 Dim octStr As String: octStr = Chr(bytes(offset))
                                 Dim octVal As Long: octVal = 0
@@ -909,11 +920,11 @@ Function getObject(ByRef content() As Byte, ByRef xrefTable As Dictionary, ByVal
                 Else
                     firstOffset = -1
                 End If
-                Dim N As Long, id As Long, objOffset As Long
+                Dim n As Long, id As Long, objOffset As Long
                 Dim v As pdfValue
                 If dict.Exists("/N") Then
-                    N = CLng(dict.Item("/N").Value)
-                    For i = 0 To N - 1
+                    n = CLng(dict.Item("/N").Value)
+                    For i = 0 To n - 1
                         Set v = GetValue(buffer, embOffset)
                         id = v.Value
                         Set v = GetValue(buffer, embOffset)
@@ -991,6 +1002,7 @@ errHandler:
 End Function
 
 
+#If False Then  ' use pdfDocument.Info
 Function GetInfoObject(ByRef content() As Byte, ByRef trailer As pdfValue, ByRef xrefTable As Dictionary) As pdfValue
     On Error GoTo errHandler
     Dim Info As pdfValue
@@ -1009,6 +1021,7 @@ errHandler:
     Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
     Stop
 End Function
+#End If
 
 
 ' updates objects Dictionary with all objects under root node, indexed by object id, i.e. loads a chunk of the PDF document

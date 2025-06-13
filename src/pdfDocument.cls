@@ -5,7 +5,7 @@ END
 Attribute VB_Name = "pdfDocument"
 Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
-Attribute VB_PredeclaredId = False
+Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = True
 ' simple API for reading, writing, and modifying Portable Document Format files
 ' Note: only smaller PDF documents that fully fit in memory supported,
@@ -59,7 +59,7 @@ Public Enum PDF_VERSIONS
 End Enum
 
 ' version in PDF
-' generally one of: %PDF–1.0 %PDF–1.1 %PDF–1.2 %PDF–1.3 %PDF–1.4 %PDF–1.5 %PDF–1.6 %PDF–1.7 %PDF-2.0
+' generally one of: %PDF 1.0 %PDF 1.1 %PDF 1.2 %PDF 1.3 %PDF 1.4 %PDF 1.5 %PDF 1.6 %PDF 1.7 %PDF-2.0
 ' should be set to version string in document catalog if exists, otherwise version at start of file
 Private m_version As PDF_VERSIONS
 Private m_header As String
@@ -124,6 +124,9 @@ Public Property Set Info(ByRef Info As pdfValue)
             Set dict("/Info") = pdfValueObj(m_Info, "/Reference")
         End If
     End If
+    
+    ' update our Title on next access
+    m_Title = vbNullString  ' we replaced /Info, so that changes Title too
 End Property
 Public Property Get Info() As pdfValue
     If m_Info Is Nothing Then Set m_Info = New pdfValue
@@ -146,6 +149,30 @@ Public Property Get Info() As pdfValue
     End If
 
     Set Info = m_Info
+End Property
+
+
+' returns either /Title in /Info or if not found (no /Info or no /Title, filename)
+' Note: we do not update /Meta as Meta is XML which we don't currently want to deal with
+Public Property Let Title(pdfTitle As String)
+    Stop ' TODO update/add /Info
+End Property
+Public Property Get Title() As String
+    If IsBlank(m_Title) Then
+        Dim dict As Dictionary
+        Set dict = Info.asDictionary
+        If Not dict Is Nothing Then
+            If dict.Exists("/Title") Then
+                m_Title = dict.Item("/Title").Value
+            Else
+                m_Title = filename
+            End If
+        Else
+            m_Title = filename
+        End If
+    End If
+    
+    Title = m_Title
 End Property
 
 
@@ -247,6 +274,19 @@ errHandler:
     Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
     Stop
     Resume
+End Property
+
+
+' returns /Count from /Pages (total /Page objects in pdf)
+' readonly - add/remove /Page objects and update /Pages tree to alter value
+Public Property Get pageCount() As Long
+    Dim dict As Dictionary
+    Set dict = pages.asDictionary
+    If Not dict Is Nothing Then
+        If dict.Exists("/Count") Then
+            pageCount = CLng(dict("/Count").Value)
+        End If
+    End If
 End Property
 
 
@@ -713,3 +753,21 @@ errHandler:
     Stop
     Resume Next
 End Sub
+
+
+' return a New instance of pdfDocument
+' Optional, if filename is provided, will load and parse the PDF document
+' Note: when using predeclared pdfDocument this is the only method that should be used
+Public Function pdfDocument(Optional ByVal filename As String = vbNullString) As pdfDocument
+    Set pdfDocument = New pdfDocument
+    
+    If Not IsBlank(filename) Then
+        If pdfDocument.loadPdf(filename) Then
+            If pdfDocument.parsePdf() Then
+                Exit Function
+            End If
+        End If
+        ' error loading, so return Nothing
+        Set pdfDocument = Nothing
+    End If
+End Function

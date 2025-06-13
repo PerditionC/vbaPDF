@@ -4,7 +4,7 @@ Begin {C62A69F0-16DC-11CE-9E98-00AA00574A4F} ufFileList
    ClientHeight    =   10140
    ClientLeft      =   120
    ClientTop       =   465
-   ClientWidth     =   8250.001
+   ClientWidth     =   10800
    OleObjectBlob   =   "ufFileList.frx":0000
    StartUpPosition =   1  'CenterOwner
 End
@@ -77,9 +77,10 @@ Private Sub lbFiles_Click()
 ShowPdfMeta:
         Set pdfDoc = pdfDocs(filename)
         ' default to filename, not including path
-        lblPdfTitle.Caption = pdfDoc.filename
+        'lblPdfTitle.Caption = pdfDoc.filename
+        lblPdfTitle.Caption = pdfDoc.Title
         If pdfDoc.Info.valueType <> PDF_ValueType.PDF_Null Then
-            If pdfDoc.Info.asDictionary().Exists("/Title") Then lblPdfTitle.Caption = pdfDoc.Info.asDictionary("/Title").Value
+            'If pdfDoc.Info.asDictionary().Exists("/Title") Then lblPdfTitle.Caption = pdfDoc.Info.asDictionary("/Title").Value
         
             If pdfDoc.Info.asDictionary().Exists("/Author") Then lblAuthor.Caption = pdfDoc.Info.asDictionary("/Author").Value
             If pdfDoc.Info.asDictionary().Exists("/CreationDate") Then lblCreationDate.Caption = pdfDoc.Info.asDictionary("/CreationDate").Value
