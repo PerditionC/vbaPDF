@@ -552,13 +552,20 @@ End Function
 
 ' validates content() probably is a PDF document and returns version from PDF declaration
 ' returns True if found a valid PDF version, False on any error or invalid version declaration
-Function GetPdfHeader(ByRef content() As Byte, ByRef headerVersion As String) As Boolean
+' Note: if prepended extra data appears before header then it is ignored, offset is start of %PDF header
+Function GetPdfHeader(ByRef content() As Byte, ByRef headerVersion As String, ByRef offset As Long) As Boolean
     On Error GoTo errHandler
     ' PDF documents should begin with something like %PDF-1.7<whitespace>
     Dim pdfHeaderVersion As String
-    Dim unusedOffset As Long
+    Dim fileSize As Long: fileSize = ByteArraySize(content)
+    If fileSize < 10 Then Exit Function ' file is too small to be valid, not even %PDF-1.x\n
+    ' scan from beginning
+    offset = FindToken(content, "%PDF-")
+    If offset < 0 Then Exit Function ' header not found!
+    
     ' extract initial string in file, reusing GetWord but it should work fine for this purpose
-    pdfHeaderVersion = TrimWS(GetWord(content, unusedOffset))
+    Dim headerOffset As Long: headerOffset = offset
+    pdfHeaderVersion = TrimWS(GetWord(content, headerOffset))
     
     ' validate its in epected format
     If Not IsMatch("%PDF-", Left(pdfHeaderVersion, 5)) Then

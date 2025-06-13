@@ -13,7 +13,8 @@ End Sub
 
 Sub TestHeaderAndVersion()
     Dim pdfDoc As pdfDocument
-    Set pdfDoc = New pdfDocument
+    'Set pdfDoc = New pdfDocument
+    Set pdfDoc = pdfDocument.pdfDocument
     Debug.Print pdfDoc.version
     Set pdfDoc = New pdfDocument
     Debug.Print "[" & pdfDoc.Header & "]"
@@ -134,5 +135,4 @@ Sub TestOrderPDFs()
         Debug.Print files(i)
     Next i
 End Sub
-
 

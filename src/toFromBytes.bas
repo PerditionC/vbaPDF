@@ -23,7 +23,7 @@ End Enum
 
 ' Returns size (count of bytes) of a Byte() array
 ' Note: returns -1 if unitialized
-Private Function ByteArraySize(bytes() As Byte) As Long
+Function ByteArraySize(bytes() As Byte) As Long
     ' if array has been erased then any access to UBound will raise an Error
     ' but if array is declared but not yet dimension, LBound() is 0 and UBound() is -1
     On Error GoTo errHandler
@@ -40,9 +40,16 @@ End Function
 
 ' returns index into Byte() array that token starts at or -1 if no match
 Function FindToken(ByRef buffer() As Byte, ByRef token As String, Optional startAt As Long = -1, Optional searchBackward As Boolean = True) As Long
+    On Error GoTo noMatch
+    FindToken = -1 ' default to not found
+    
     Dim ndx As Long, i As Long
     Dim tokenB() As Byte
     Dim tokenLen As Long
+    Dim upperBound As Long: upperBound = ByteArraySize(buffer)
+    If upperBound < 0 Then Exit Function ' no data, so token can't be found
+    
+    ' set startAt index if not explicitly provided
     If (startAt < LBound(buffer)) Or (startAt > UBound(buffer)) Then
         If searchBackward Then
             startAt = UBound(buffer)
@@ -50,8 +57,8 @@ Function FindToken(ByRef buffer() As Byte, ByRef token As String, Optional start
             startAt = LBound(buffer)
         End If
     End If
+    
     tokenB = StringToBytes(token)
-    BytesToString tokenB
     tokenLen = UBound(tokenB) - LBound(tokenB) + 1
     If searchBackward Then ' match requires at least tokenLen bytes
         For ndx = startAt - tokenLen To LBound(buffer) Step -1
@@ -63,7 +70,7 @@ Function FindToken(ByRef buffer() As Byte, ByRef token As String, Optional start
 noMatchBackwards:
         Next ndx
     Else
-        For ndx = startAt To UBound(buffer) - tokenLen
+        For ndx = startAt To upperBound - tokenLen
             For i = 0 To tokenLen - 1
                 If buffer(ndx + i) <> tokenB(i) Then GoTo noMatchForward
                 DoEvents
@@ -73,6 +80,7 @@ noMatchForward:
         Next ndx
     End If
 
+noMatch:
     ' no match, return -1
     ndx = -1
 FoundMatch: ' found a match return ndx it starts at

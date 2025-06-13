@@ -22,6 +22,10 @@ Public rootCatalog As pdfValue  ' /Root object in cross reference table, documen
 Public xrefTable As Dictionary  ' cross reference table consisting of xrefEntry key'd by object id
 Public trailer As pdfValue      ' special pdf dictionary with references to key document objects such as /Root and /Info
 
+' PDF 2.0 allow arbitrary data prior to PDF header, with all offsets beginning at start of header (the %PDF)
+' when reading, if there is data we store it here and rewrite it on save, but it is otherwise unused
+Public prependedData As Variant
+
 ' similar information, meta is newer but either or both may be present
 Private m_Info As pdfValue
 Private m_Meta As pdfValue
@@ -406,9 +410,20 @@ Public Function loadPdf(ByVal pdfFilename As String) As Boolean
     ' validate probably a PDF file and get header version (more recent version# may be specified in root Catalog)
     ' PDF 2.0 allows
     Dim headerVersion As String ' Note: we have to pass a String object as Me.Header won't save changes
-    If Not GetPdfHeader(content, headerVersion) Then
-        Erase content
+    Dim offset As Long
+    If Not GetPdfHeader(content, headerVersion, offset) Then
+        Erase content: content = vbNullString
         Exit Function ' return False
+    End If
+    ' if funk before header move it and shrink our data
+    If offset > 0 Then
+        Dim tmpBuffer() As Byte
+        ReDim tmpBuffer(0 To (offset - 1)) As Byte
+        CopyBytes content, tmpBuffer, 0, 0, offset
+        prependedData = tmpBuffer
+        ReDim tmpBuffer(0 To (UBound(content) - offset))
+        CopyBytes content, tmpBuffer, offset, 0
+        content = tmpBuffer
     End If
     Me.Header = headerVersion   ' Note: this also updates our Version value
     
