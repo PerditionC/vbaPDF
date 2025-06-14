@@ -12,6 +12,10 @@
 *.[fF][rR][mM] text eol=crlf
 *.[fF][rR][xX] binary
 
+# Excel workbook source files (.xml, .bin)
+*.[xX][mM][lL] text eol=auto
+*.[bB][iI][nN] binary
+
 # Excel documents (.xla, .xlam, .xls, .xlsb, .xlsm, .xlsx)
 *.[xX][lL][aA] binary
 *.[xX][lL][aA][mM] binary
