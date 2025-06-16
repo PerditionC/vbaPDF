@@ -23,7 +23,7 @@ Public Property Get Length() As Long
     ' Length is stored in meta
     ' it should be same as size of data
     If Meta.Exists("/Length") Then
-        Length = CLng(Meta.Item("/Length").Value)
+        Length = CLng(Meta.Item("/Length").value)
     End If
     
     On Error Resume Next
@@ -39,7 +39,7 @@ End Property
 
 ' this will add/update /Length property in meta and resize data()
 Public Property Let Length(ByVal Count As Long)
-    Meta("/Length").Value = Count ' add or replace
+    Meta("/Length").value = Count ' add or replace
     
     On Error Resume Next
     Dim dataLen As Long
@@ -54,7 +54,7 @@ End Property
 
 ' returns stream data [as stored, ie. compressed] as a Byte array
 Public Property Get data() As Byte()
-    data = stream_data.Value
+    data = stream_data.value
 End Property
 
 ' returns stream data in uncompressed form as Byte array
@@ -66,13 +66,13 @@ Public Property Get udata() As Byte()
         If Meta.Exists("/Filter") Then
             ' TODO support all /Filter types
             Dim filter As String
-            filter = Meta.Item("/Filter").Value
+            filter = Meta.Item("/Filter").value
             Select Case LCase(filter)
                 Case "/flatedecode"
                     Dim startIndex As Long: startIndex = 2 ' skip past zlib wrapper to raw Deflate data
                     Dim outSize As Long ' as count of bytes -- should be 0 on entry so will be size on output
                     Dim estBufSize As Long ' if known, uncompressed size
-                    If Meta.Exists("/DL") Then estBufSize = CLng(Meta.Item("/DL").Value) ' only a hint
+                    If Meta.Exists("/DL") Then estBufSize = CLng(Meta.Item("/DL").value) ' only a hint
                     Erase m_udata
                     
                     ' Note: libdeflate_inflate arguments are byVal, we expect them be byRef
@@ -90,15 +90,15 @@ Public Property Get udata() As Byte()
                         Dim pdfV As pdfValue
                         Set pdfV = Meta.Item("/DecodeParms")
                         Dim decodeParms As Dictionary
-                        Set decodeParms = pdfV.Value
+                        Set decodeParms = pdfV.value
                         If decodeParms.Exists("/Predictor") Then
                             Set pdfV = decodeParms.Item("/Predictor")
-                            predictor = pdfV.Value
+                            predictor = pdfV.value
                         End If
                         ' should only be supplied if predictor > 1, but we can load value regardless, only used if predictor > 1
                         If decodeParms.Exists("/Columns") Then
                             Set pdfV = decodeParms.Item("/Columns")
-                            columns = pdfV.Value
+                            columns = pdfV.value
                         End If
                         Set pdfV = Nothing
                     End If
@@ -184,7 +184,7 @@ End Property
 
 ' returns meta data as a VBA Dictionary object
 Public Property Get Meta() As Dictionary
-    Set Meta = stream_meta.Value
+    Set Meta = stream_meta.value
 End Property
 
 Public Sub Init(ByRef Meta As pdfValue, ByRef data As pdfValue)

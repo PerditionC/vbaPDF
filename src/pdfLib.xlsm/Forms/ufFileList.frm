@@ -3,7 +3,7 @@ Begin {C62A69F0-16DC-11CE-9E98-00AA00574A4F} ufFileList
    Caption         =   "Combine PDF files"
    ClientHeight    =   10140
    ClientLeft      =   120
-   ClientTop       =   468
+   ClientTop       =   465
    ClientWidth     =   10800
    OleObjectBlob   =   "ufFileList.frx":0000
    StartUpPosition =   1  'CenterOwner
@@ -48,7 +48,7 @@ Private Sub cbReverseOrder_Click()
 End Sub
 
 Private Sub ckbShowInfo_Click()
-    If FrameInfo.Visible <> ckbShowInfo.Value Then
+    If FrameInfo.Visible <> ckbShowInfo.value Then
         ' note this test is reversed from what we want because we are about to change it
         If Not FrameInfo.Visible Then
             ufFileList.Height = ufFileList.Height + FrameInfo.Height
@@ -57,7 +57,7 @@ Private Sub ckbShowInfo_Click()
         End If
     End If
     
-    FrameInfo.Visible = ckbShowInfo.Value
+    FrameInfo.Visible = ckbShowInfo.value
 End Sub
 
 Private Sub lbFiles_Click()
@@ -80,12 +80,12 @@ ShowPdfMeta:
         'lblPdfTitle.Caption = pdfDoc.filename
         lblPdfTitle.Caption = pdfDoc.Title
         If pdfDoc.Info.valueType <> PDF_ValueType.PDF_Null Then
-            'If pdfDoc.Info.asDictionary().Exists("/Title") Then lblPdfTitle.Caption = pdfDoc.Info.asDictionary("/Title").Value
+            'If pdfDoc.Info.hasKey("/Title") Then lblPdfTitle.Caption = pdfDoc.Info.asDictionary("/Title").Value
         
-            If pdfDoc.Info.asDictionary().Exists("/Author") Then lblAuthor.Caption = pdfDoc.Info.asDictionary("/Author").Value
-            If pdfDoc.Info.asDictionary().Exists("/CreationDate") Then lblCreationDate.Caption = pdfDoc.Info.asDictionary("/CreationDate").Value
-            'If pdfDoc.Info.asDictionary().Exists("/ModDate") Then lblModDate.Caption = pdfDoc.Info.asDictionary("/ModDate").Value
-            If pdfDoc.Info.asDictionary().Exists("/Producer") Then lblProducer.Caption = pdfDoc.Info.asDictionary("/Producer").Value
+            If pdfDoc.Info.hasKey("/Author") Then lblAuthor.Caption = pdfDoc.Info.asDictionary("/Author").value
+            If pdfDoc.Info.hasKey("/CreationDate") Then lblCreationDate.Caption = pdfDoc.Info.asDictionary("/CreationDate").value
+            'If pdfDoc.Info.hasKey("/ModDate") Then lblModDate.Caption = pdfDoc.Info.asDictionary("/ModDate").Value
+            If pdfDoc.Info.hasKey("/Producer") Then lblProducer.Caption = pdfDoc.Info.asDictionary("/Producer").value
         End If
     Else
         ' load pdf
@@ -110,7 +110,7 @@ Private Sub spUpDown_SpinUp()
 End Sub
 
 Private Sub UserForm_Activate()
-    FrameInfo.Visible = ckbShowInfo.Value
+    FrameInfo.Visible = ckbShowInfo.value
     
     Dim i As Long
     For i = LBound(list) To UBound(list)

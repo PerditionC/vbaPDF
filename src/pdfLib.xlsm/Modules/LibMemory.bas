@@ -143,14 +143,14 @@ End Sub
 'The only method in this module that uses CopyMemory!
 'Assures that InitRemoteMemory can link the Var Type for new structs
 '*******************************************************************************
-Private Property Let MemIntAPI(ByVal memAddress As LongPtr, ByVal newValue As Integer)
+Private Property Let MemIntAPI(ByVal memAddress As LongPtr, ByVal NewValue As Integer)
     Static rm As REMOTE_MEMORY
     If Not rm.IsInitialized Then 'Link .remoteVt to .memValue's first 2 bytes
         rm.remoteVT = VarPtr(rm.memValue)
         CopyMemory rm.remoteVT, vbInteger + VT_BYREF, 2
         rm.IsInitialized = True
     End If
-    RemoteAssign rm, memAddress, rm.remoteVT, vbInteger + VT_BYREF, rm.memValue, newValue
+    RemoteAssign rm, memAddress, rm.remoteVT, vbInteger + VT_BYREF, rm.memValue, NewValue
 End Property
 
 '*******************************************************************************
@@ -164,11 +164,11 @@ Private Sub RemoteAssign(ByRef rm As REMOTE_MEMORY _
                        , ByRef remoteVT As Variant _
                        , ByVal newVT As VbVarType _
                        , ByRef targetVariable As Variant _
-                       , ByRef newValue As Variant)
+                       , ByRef NewValue As Variant)
     rm.memValue = memAddress
     If Not rm.IsInitialized Then InitRemoteMemory rm
     remoteVT = newVT
-    targetVariable = newValue
+    targetVariable = NewValue
     remoteVT = vbEmpty 'Stop linking to remote address, for safety
 End Sub
 
@@ -183,12 +183,12 @@ Public Property Get MemByte(ByVal memAddress As LongPtr) As Byte
         RemoteAssign rm, memAddress, rm.remoteVT, vbByte + VT_BYREF, MemByte, rm.memValue
     #End If
 End Property
-Public Property Let MemByte(ByVal memAddress As LongPtr, ByVal newValue As Byte)
+Public Property Let MemByte(ByVal memAddress As LongPtr, ByVal NewValue As Byte)
     #If Mac Then
-        CopyMemory ByVal memAddress, newValue, 1
+        CopyMemory ByVal memAddress, NewValue, 1
     #Else
         Static rm As REMOTE_MEMORY
-        RemoteAssign rm, memAddress, rm.remoteVT, vbByte + VT_BYREF, rm.memValue, newValue
+        RemoteAssign rm, memAddress, rm.remoteVT, vbByte + VT_BYREF, rm.memValue, NewValue
     #End If
 End Property
 
@@ -203,12 +203,12 @@ Public Property Get MemInt(ByVal memAddress As LongPtr) As Integer
         RemoteAssign rm, memAddress, rm.remoteVT, vbInteger + VT_BYREF, MemInt, rm.memValue
     #End If
 End Property
-Public Property Let MemInt(ByVal memAddress As LongPtr, ByVal newValue As Integer)
+Public Property Let MemInt(ByVal memAddress As LongPtr, ByVal NewValue As Integer)
     #If Mac Then
-        CopyMemory ByVal memAddress, newValue, 2
+        CopyMemory ByVal memAddress, NewValue, 2
     #Else
         Static rm As REMOTE_MEMORY
-        RemoteAssign rm, memAddress, rm.remoteVT, vbInteger + VT_BYREF, rm.memValue, newValue
+        RemoteAssign rm, memAddress, rm.remoteVT, vbInteger + VT_BYREF, rm.memValue, NewValue
     #End If
 End Property
 
@@ -223,12 +223,12 @@ Public Property Get MemBool(ByVal memAddress As LongPtr) As Boolean
         RemoteAssign rm, memAddress, rm.remoteVT, vbBoolean + VT_BYREF, MemBool, rm.memValue
     #End If
 End Property
-Public Property Let MemBool(ByVal memAddress As LongPtr, ByVal newValue As Boolean)
+Public Property Let MemBool(ByVal memAddress As LongPtr, ByVal NewValue As Boolean)
     #If Mac Then
-        CopyMemory ByVal memAddress, newValue, 2
+        CopyMemory ByVal memAddress, NewValue, 2
     #Else
         Static rm As REMOTE_MEMORY
-        RemoteAssign rm, memAddress, rm.remoteVT, vbBoolean + VT_BYREF, rm.memValue, newValue
+        RemoteAssign rm, memAddress, rm.remoteVT, vbBoolean + VT_BYREF, rm.memValue, NewValue
     #End If
 End Property
 
@@ -243,12 +243,12 @@ Public Property Get MemLong(ByVal memAddress As LongPtr) As Long
         RemoteAssign rm, memAddress, rm.remoteVT, vbLong + VT_BYREF, MemLong, rm.memValue
     #End If
 End Property
-Public Property Let MemLong(ByVal memAddress As LongPtr, ByVal newValue As Long)
+Public Property Let MemLong(ByVal memAddress As LongPtr, ByVal NewValue As Long)
     #If Mac Then
-        CopyMemory ByVal memAddress, newValue, 4
+        CopyMemory ByVal memAddress, NewValue, 4
     #Else
         Static rm As REMOTE_MEMORY
-        RemoteAssign rm, memAddress, rm.remoteVT, vbLong + VT_BYREF, rm.memValue, newValue
+        RemoteAssign rm, memAddress, rm.remoteVT, vbLong + VT_BYREF, rm.memValue, NewValue
     #End If
 End Property
 
@@ -263,12 +263,12 @@ Public Property Get MemSng(ByVal memAddress As LongPtr) As Single
         RemoteAssign rm, memAddress, rm.remoteVT, vbSingle + VT_BYREF, MemSng, rm.memValue
     #End If
 End Property
-Public Property Let MemSng(ByVal memAddress As LongPtr, ByVal newValue As Single)
+Public Property Let MemSng(ByVal memAddress As LongPtr, ByVal NewValue As Single)
     #If Mac Then
-        CopyMemory ByVal memAddress, newValue, 4
+        CopyMemory ByVal memAddress, NewValue, 4
     #Else
         Static rm As REMOTE_MEMORY
-        RemoteAssign rm, memAddress, rm.remoteVT, vbSingle + VT_BYREF, rm.memValue, newValue
+        RemoteAssign rm, memAddress, rm.remoteVT, vbSingle + VT_BYREF, rm.memValue, NewValue
     #End If
 End Property
 
@@ -285,12 +285,12 @@ Public Property Get MemLongLong(ByVal memAddress As LongLong) As LongLong
         MemLongLong = ByRefLongLong(rm, rm.remoteVT, rm.memValue)
     #End If
 End Property
-Public Property Let MemLongLong(ByVal memAddress As LongLong, ByVal newValue As LongLong)
+Public Property Let MemLongLong(ByVal memAddress As LongLong, ByVal NewValue As LongLong)
     #If Mac Then
-        CopyMemory ByVal memAddress, newValue, 8
+        CopyMemory ByVal memAddress, NewValue, 8
     #Else
         'Cannot set Variant/LongLong ByRef so we use Currency instead
-        Static rmSrc As REMOTE_MEMORY: rmSrc.memValue = VarPtr(newValue)
+        Static rmSrc As REMOTE_MEMORY: rmSrc.memValue = VarPtr(NewValue)
         Static rmDest As REMOTE_MEMORY: rmDest.memValue = memAddress
         LetByRefLongLong rmDest, rmDest.remoteVT, rmDest.memValue _
                        , rmSrc, rmSrc.remoteVT, rmSrc.memValue
@@ -336,16 +336,16 @@ Public Property Get MemLongPtr(ByVal memAddress As LongPtr) As LongPtr
         RemoteAssign rm, memAddress, rm.remoteVT, vbLong + VT_BYREF, MemLongPtr, rm.memValue
     #End If
 End Property
-Public Property Let MemLongPtr(ByVal memAddress As LongPtr, ByVal newValue As LongPtr)
+Public Property Let MemLongPtr(ByVal memAddress As LongPtr, ByVal NewValue As LongPtr)
     #If Mac Then
-        CopyMemory ByVal memAddress, newValue, PTR_SIZE
+        CopyMemory ByVal memAddress, NewValue, PTR_SIZE
     #ElseIf Win64 Then
-        Static rmSrc As REMOTE_MEMORY: rmSrc.memValue = VarPtr(newValue)
+        Static rmSrc As REMOTE_MEMORY: rmSrc.memValue = VarPtr(NewValue)
         Static rmDest As REMOTE_MEMORY: rmDest.memValue = memAddress
         LetByRefLongLong rmDest, rmDest.remoteVT, rmDest.memValue, rmSrc, rmSrc.remoteVT, rmSrc.memValue
     #Else
         Static rm As REMOTE_MEMORY
-        RemoteAssign rm, memAddress, rm.remoteVT, vbLong + VT_BYREF, rm.memValue, newValue
+        RemoteAssign rm, memAddress, rm.remoteVT, vbLong + VT_BYREF, rm.memValue, NewValue
     #End If
 End Property
 
@@ -360,12 +360,12 @@ Public Property Get MemCur(ByVal memAddress As LongPtr) As Currency
         RemoteAssign rm, memAddress, rm.remoteVT, vbCurrency + VT_BYREF, MemCur, rm.memValue
     #End If
 End Property
-Public Property Let MemCur(ByVal memAddress As LongPtr, ByVal newValue As Currency)
+Public Property Let MemCur(ByVal memAddress As LongPtr, ByVal NewValue As Currency)
     #If Mac Then
-        CopyMemory ByVal memAddress, newValue, 8
+        CopyMemory ByVal memAddress, NewValue, 8
     #Else
         Static rm As REMOTE_MEMORY
-        RemoteAssign rm, memAddress, rm.remoteVT, vbCurrency + VT_BYREF, rm.memValue, newValue
+        RemoteAssign rm, memAddress, rm.remoteVT, vbCurrency + VT_BYREF, rm.memValue, NewValue
     #End If
 End Property
 
@@ -380,12 +380,12 @@ Public Property Get MemDate(ByVal memAddress As LongPtr) As Date
         RemoteAssign rm, memAddress, rm.remoteVT, vbDate + VT_BYREF, MemDate, rm.memValue
     #End If
 End Property
-Public Property Let MemDate(ByVal memAddress As LongPtr, ByVal newValue As Date)
+Public Property Let MemDate(ByVal memAddress As LongPtr, ByVal NewValue As Date)
     #If Mac Then
-        CopyMemory ByVal memAddress, newValue, 8
+        CopyMemory ByVal memAddress, NewValue, 8
     #Else
         Static rm As REMOTE_MEMORY
-        RemoteAssign rm, memAddress, rm.remoteVT, vbDate + VT_BYREF, rm.memValue, newValue
+        RemoteAssign rm, memAddress, rm.remoteVT, vbDate + VT_BYREF, rm.memValue, NewValue
     #End If
 End Property
 
@@ -400,12 +400,12 @@ Public Property Get MemDbl(ByVal memAddress As LongPtr) As Double
         RemoteAssign rm, memAddress, rm.remoteVT, vbDouble + VT_BYREF, MemDbl, rm.memValue
     #End If
 End Property
-Public Property Let MemDbl(ByVal memAddress As LongPtr, ByVal newValue As Double)
+Public Property Let MemDbl(ByVal memAddress As LongPtr, ByVal NewValue As Double)
     #If Mac Then
-        CopyMemory ByVal memAddress, newValue, 8
+        CopyMemory ByVal memAddress, NewValue, 8
     #Else
         Static rm As REMOTE_MEMORY
-        RemoteAssign rm, memAddress, rm.remoteVT, vbDouble + VT_BYREF, rm.memValue, newValue
+        RemoteAssign rm, memAddress, rm.remoteVT, vbDouble + VT_BYREF, rm.memValue, NewValue
     #End If
 End Property
 

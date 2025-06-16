@@ -1,10 +1,10 @@
 VERSION 5.00
 Begin {C62A69F0-16DC-11CE-9E98-00AA00574A4F} ufPdfInfo 
    Caption         =   "View PDF Information"
-   ClientHeight    =   12672
-   ClientLeft      =   156
-   ClientTop       =   576
-   ClientWidth     =   13500
+   ClientHeight    =   6615
+   ClientLeft      =   150
+   ClientTop       =   495
+   ClientWidth     =   10800
    OleObjectBlob   =   "ufPdfInfo.frx":0000
    StartUpPosition =   1  'CenterOwner
 End
@@ -18,6 +18,9 @@ Option Explicit
 Public pdfDoc As pdfDocument
 
 Private Sub cbContinue_Click()
+    pdfDoc.renumberIds pdfDoc.trailer, 100
+    pdfDoc.savePdfAs "renumberd.pdf"
+    Stop
     Me.Hide
     Unload Me
 End Sub
@@ -37,18 +40,18 @@ Private Sub UpdateInfo()
     If pdfDoc.Info.valueType <> PDF_ValueType.PDF_Null Then
         'If pdfDoc.Info.asDictionary().Exists("/Title") Then lblPdfTitle.Caption = pdfDoc.Info.asDictionary("/Title").Value
         
-        If pdfDoc.Info.asDictionary().Exists("/Author") Then lblAuthor.Caption = pdfDoc.Info.asDictionary("/Author").Value
-        If pdfDoc.Info.asDictionary().Exists("/CreationDate") Then lblCreationDate.Caption = pdfDoc.Info.asDictionary("/CreationDate").Value
-        'If pdfDoc.Info.asDictionary().Exists("/ModDate") Then lblModDate.Caption = pdfDoc.Info.asDictionary("/ModDate").Value
-        If pdfDoc.Info.asDictionary().Exists("/Producer") Then lblProducer.Caption = pdfDoc.Info.asDictionary("/Producer").Value
-        If pdfDoc.Info.asDictionary().Exists("/Subject") Then lblSubject.Caption = pdfDoc.Info.asDictionary("/Subject").Value
+        If pdfDoc.Info.hasKey("/Author") Then lblAuthor.Caption = pdfDoc.Info.asDictionary("/Author").value
+        If pdfDoc.Info.hasKey("/CreationDate") Then lblCreationDate.Caption = pdfDoc.Info.asDictionary("/CreationDate").value
+        'If pdfDoc.Info.hasKey("/ModDate") Then lblModDate.Caption = pdfDoc.Info.asDictionary("/ModDate").Value
+        If pdfDoc.Info.hasKey("/Producer") Then lblProducer.Caption = pdfDoc.Info.asDictionary("/Producer").value
+        If pdfDoc.Info.hasKey("/Subject") Then lblSubject.Caption = pdfDoc.Info.asDictionary("/Subject").value
         
         Dim dict As Dictionary
         Set dict = pdfDoc.Info.asDictionary
         Dim v As Variant
         Dim obj As pdfValue
         For Each v In dict.Keys
-            lbInfo.AddItem CStr(v) & "=" & dict.Item(v).Value
+            lbInfo.AddItem CStr(v) & "=" & dict.Item(v).value
         Next v
     End If
 End Sub

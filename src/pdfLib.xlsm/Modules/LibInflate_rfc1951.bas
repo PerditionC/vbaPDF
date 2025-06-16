@@ -186,12 +186,12 @@ Private Function buildHuffmanTree(ByRef lengths As Variant, ByRef minBitLen As I
     minValue = &H7FFFFFFF: maxValue = -1
     Dim ndx As Long
     For ndx = minCode To maxCode
-        Dim Value As Long: Value = CLng(lengths(ndx))
-        If (Value < minValue) And (Value > 0) Then
-            minValue = Value
+        Dim value As Long: value = CLng(lengths(ndx))
+        If (value < minValue) And (value > 0) Then
+            minValue = value
         End If
-        If Value > maxValue Then
-            maxValue = Value
+        If value > maxValue Then
+            maxValue = value
         End If
         DoEvents
     
@@ -460,7 +460,7 @@ errHandler:
 End Function
 
 
- Function ReverseBits(ByVal bitCount As Integer, ByVal Value As Long) As Long
+ Function ReverseBits(ByVal bitCount As Integer, ByVal value As Long) As Long
     Dim flipped As Long
     Dim ndx As Long
     For ndx = 0 To (bitCount \ 2)
@@ -471,8 +471,8 @@ End Function
         shiftDistance = bitCount - (2 * ndx) - 1
         highBitIndex = 2 ^ (bitCount - ndx - 1)
         lowBitIndex = 2 ^ ndx
-        highBitValue = Value And highBitIndex
-        lowBitValue = Value And lowBitIndex
+        highBitValue = value And highBitIndex
+        lowBitValue = value And lowBitIndex
         flipped = flipped Or LShift(lowBitValue, shiftDistance) Or RShift(highBitValue, shiftDistance)
     Next ndx
     ReverseBits = flipped

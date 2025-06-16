@@ -45,12 +45,12 @@ Sub TestProblemPdfs()
         Debug.Print "Error parsing pdf " & pdfDoc.filename
     End If
     
-    Debug.Print pdfDoc.pages.asDictionary.Item("/Count").Value
+    Debug.Print pdfDoc.pages.asDictionary.Item("/Count").value
     
     Dim obj As pdfValue
     Set obj = pdfDoc.getObject(69, 0)
     If obj.valueType = PDF_EndOfDictionary Then
-        Debug.Print obj.Value.Value.Length
+        Debug.Print obj.value.value.Length
     End If
     Stop
     

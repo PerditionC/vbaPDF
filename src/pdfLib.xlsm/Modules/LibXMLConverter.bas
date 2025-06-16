@@ -363,7 +363,7 @@ End Function
 Private Function xml_RootNode(xml_Node As Dictionary) As Dictionary
     Set xml_RootNode = xml_Node
     Do While Not xml_RootNode.Exists("parentNode")
-        Set xml_RootNode = xml_RootNode("parentNode")
+        Set xml_RootNode = xml_RootNode.Item("parentNode")
     Loop
 End Function
 
@@ -485,7 +485,7 @@ Private Sub xml_BufferAppend(ByRef xml_buffer As String, _
     End If
     
     ' Copy memory from append to buffer at buffer position
-    xml_CopyMemory ByVal xml_UnsignedAdd(StrPtr(xml_buffer), _
+    LibMemory.CopyMemory ByVal xml_UnsignedAdd(StrPtr(xml_buffer), _
         xml_BufferPosition), _
         ByVal StrPtr(xml_Append), _
         xml_AppendLength

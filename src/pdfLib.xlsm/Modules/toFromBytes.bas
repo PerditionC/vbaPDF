@@ -172,22 +172,22 @@ End Function
 
 
 ' Helper function to copy range of bytes from one array to another
-Sub CopyBytes(ByRef src() As Byte, ByRef dst() As Byte, _
+Sub CopyBytes(ByRef src() As Byte, ByRef DST() As Byte, _
                    Optional ByVal srcOffset As Long = 0, Optional ByVal dstOffset As Long = 0, _
                    Optional ByVal Count As Long = -1 _
                   )
     ' exit early if nothing to copy, avoids out of bounds for FASTCOPY if dstOffset = UBound(dst)+1 and count=0
     If Count = 0 Then Exit Sub
     If srcOffset < LBound(src) Then srcOffset = LBound(src)
-    If dstOffset < LBound(dst) Then dstOffset = LBound(dst)
+    If dstOffset < LBound(DST) Then dstOffset = LBound(DST)
     If (Count < 0) Or ((Count + srcOffset) > (UBound(src) + 1)) Then Count = UBound(src) - srcOffset + 1
-    If dstOffset + Count > UBound(dst) + 1 Then ReDim Preserve dst(LBound(dst) To (dstOffset + Count - 1))
+    If dstOffset + Count > UBound(DST) + 1 Then ReDim Preserve DST(LBound(DST) To (dstOffset + Count - 1))
 #If FASTCOPY_ Then
-    CopyMemory VarPtr(dst(dstOffset)), VarPtr(src(srcOffset)), Count
+    CopyMemory VarPtr(DST(dstOffset)), VarPtr(src(srcOffset)), Count
 #Else
     Dim i As Long
     For i = 0 To Count - 1
-        dst(dstOffset + i) = src(srcOffset + i)
+        DST(dstOffset + i) = src(srcOffset + i)
         DoEvents
     Next i
 #End If
@@ -269,7 +269,7 @@ End Function
 
 ' left shift bits filling with 0s from the right, note value is capped to 32 bit value
 ' Warning: this requires LongLong support as written (64bit Excel) to avoid overflow issues
-Function LShift(ByVal Value As Long, ByVal shift As Integer) As Long
+Function LShift(ByVal value As Long, ByVal shift As Integer) As Long
 '    Debug.Print "Value=" & Hex(value) & " << " & shift
     'LShift = CLng((Value * (2^ ^ shift)) And &H7FFFFFFF^)  ' truncate if exceeds max positive Long value
     
@@ -277,7 +277,7 @@ Function LShift(ByVal Value As Long, ByVal shift As Integer) As Long
         LShift = 0
     Else
         Dim fullValue As LongLong
-        fullValue = (Value * (2^ ^ shift)) And &HFFFFFFFF^  ' this still sign extends
+        fullValue = (value * (2^ ^ shift)) And &HFFFFFFFF^  ' this still sign extends
         'LShift = CLng(fullValue)   ' Will cause Overflow error if > &H7FFFFFFF^
         Dim signBit As Boolean
         signBit = Sgn(fullValue) < 0
@@ -291,12 +291,12 @@ End Function
 
 ' right shift bits filling with 0s from the left, result is always 0 or smaller than initial value
 ' Warning: this requires LongLong support as written (64bit Excel) to avoid overflow issues
-Function RShift(ByVal Value As Long, ByVal shift As Integer) As Long
+Function RShift(ByVal value As Long, ByVal shift As Integer) As Long
 '    Debug.Print "Value=" & Hex(value) & " >> " & shift
     If shift > 31 Then
         RShift = 0
     Else
-        RShift = CLng(Int((Value And &HFFFFFFFF^) / (2 ^ shift)) And &H7FFFFFFF^)
+        RShift = CLng(Int((value And &HFFFFFFFF^) / (2 ^ shift)) And &H7FFFFFFF^)
     End If
 '    Debug.Print Hex(RShift)
     DoEvents

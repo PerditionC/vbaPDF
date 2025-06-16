@@ -183,7 +183,7 @@ Private Type utc_TIME_ZONE_INFORMATION
 End Type
 
 Private Type DYNAMIC_TIME_ZONE_INFORMATION
-    Bias As Long
+    bias As Long
     StandardName(0 To 31) As Integer
     StandardDate As utc_SYSTEMTIME
     StandardBias As Long
@@ -682,9 +682,9 @@ End Function
 Private Function ConvDateUTC(ByVal InVal As String) As Date
     Dim RetVal As Variant
     
-'    Dim RegEx As Object
-'    Set RegEx = CreateObject("VBScript.RegExp")
-    Dim RegEx As New RegExp
+    Dim RegEx As Object
+    Set RegEx = CreateObject("VBScript.RegExp")
+'    Dim RegEx As New RegExp
     With RegEx
         .Global = True
         .Multiline = True
@@ -733,8 +733,9 @@ Private Function ConvTimeUTC(ByRef InVal As String) As Date
     Dim dblSeconds As Double
     Dim dblMilliseconds As Double
         
-    Dim RegEx As New RegExp ' Object
-    'Set RegEx = CreateObject("VBScript.RegExp")
+    'Dim RegEx As New RegExp
+    Dim RegEx As Object
+    Set RegEx = CreateObject("VBScript.RegExp")
     
     With RegEx
         .Global = True

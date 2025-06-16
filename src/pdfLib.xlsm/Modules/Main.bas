@@ -2,67 +2,32 @@ Attribute VB_Name = "Main"
 Option Explicit
 
 
-#If False Then
-' given two /Pages objects, combines them and returns unified /Pages object
-' Note: /Pages objects from 2nd pages are bias'd so id begins at baseId+1 (where obj with id=0 is always assumed to be root of free list)
-' Warning: this will modify any VBA Objects for pdfValue Reference objects contained in pages2 /Kids
-Private Function CombinePages(ByRef pages1 As pdfValue, ByRef pages2 As pdfValue, Optional ByVal baseId As Long) As pdfValue
-    Dim obj As pdfValue
-    Dim pages As pdfValue
-    Set pages = New pdfValue
-    pages.id = pages1.id
-    pages.generation = 0
-    pages.valueType = PDF_ValueType.PDF_Object
-    Dim dict As Dictionary: Set dict = New Dictionary
-    Set obj = New pdfValue
-    obj.valueType = PDF_ValueType.PDF_Dictionary
-    Set obj.Value = dict
-    Set pages.Value = obj
-    
-    Dim kids As Collection: Set kids = New Collection
-    
-    Dim v As Variant
-    Dim d As Dictionary
-    Dim c As Collection
-    
-    Set d = pages1.Value.Value
-    Set obj = d.Item("/Kids")
-    Set c = obj.Value
-    For Each v In c
-        Set obj = v ' obj reference
-        kids.Add obj
-    Next v
-    
-    ' Warning! TODO! need to fixup actual obj Referenced in here so its /Parent refers back to our pages.id obj
-    Set d = pages2.Value.Value
-    Set obj = d.Item("/Kids")
-    Set c = obj.Value
-    For Each v In c
-        Set obj = v ' obj reference
-        obj.Value = baseId + obj.Value      ' Note: only done for pages2 /Kids, this is a reference, so value is the id we reference
-        kids.Add obj
-    Next v
-    
-    ' create our new /Count and /Kids objs
-    dict.Add "/Type", pdfNameObj("/Pages")
-    dict.Add "/Count", pdfValueObj(kids.Count)
-    dict.Add "/Kids", pdfArrayObj(kids)
-    
-    Set CombinePages = pages
-    Set pages = Nothing
-End Function
-#End If
-
-
 Public Sub CombinePDFs(ByRef sourceFiles() As String, ByRef outFile As String)
     'Dim oPages As pdfValue  ' /Type /Pages with /Count # /Kids [ /Page references ...]
     Dim combinedPdfDoc As pdfDocument: Set combinedPdfDoc = New pdfDocument
+    ' initialize with some basic structures
+    combinedPdfDoc.AddInfo
+    combinedPdfDoc.AddPages
+    combinedPdfDoc.AddOutlines
+    With combinedPdfDoc.rootCatalog.asDictionary()
+        Set .Item("/PageMode") = pdfValue.NewNameValue("/UseOutlines") ' default is "/UseNone"
+    End With
     
     Dim offset As Long
     Dim outputFileNum As Integer
     outputFileNum = combinedPdfDoc.SavePdfHeader(outFile, offset)
     
-    Dim ndx As Long, baseId As Long
+    Dim baseId As Long
+    ' we don't yet know the id's used by our /Root, /Info and top level /Pages objs
+    With combinedPdfDoc
+        .rootCatalog.id = -1
+        .Info.id = -2
+        .pages.id = -3
+    
+        baseId = .nextObjId
+    End With
+    
+    Dim ndx As Long
     For ndx = LBound(sourceFiles) To UBound(sourceFiles)
         Dim pdfDoc As pdfDocument: Set pdfDoc = New pdfDocument
         
@@ -73,76 +38,52 @@ Public Sub CombinePDFs(ByRef sourceFiles() As String, ByRef outFile As String)
         pdfDoc.parsePdf
         
         ' for each additional document we need to update /Pages
-        'Set pages = FindPages(root, pdfObjs)
         Dim pages As pdfValue
         Set pages = pdfDoc.pages()
         
-        If combinedPdfDoc.rootCatalog.valueType = PDF_ValueType.PDF_Null Then
-            ' first time through we can just use /Root from pdf unchanged
-            Set combinedPdfDoc.rootCatalog = pdfDoc.rootCatalog
-            Set combinedPdfDoc.trailer = pdfDoc.trailer
-            Set combinedPdfDoc.Info = pdfDoc.Info
-            Set combinedPdfDoc.pages = pdfDoc.pages
-            
-            ' so remove pages object for now, we add a single one back after we have gone through all of them
-            pdfDoc.objectCache.Remove pages.id
-        Else
-            ' each additional pdf need to remove /Root, so only left with 1 (the first) /Root
-            ' but we need to copy/merge some optional fields such as /Outline for bookmarks
-            pdfDoc.objectCache.Remove pdfDoc.rootCatalog.id
-            
-            If pdfDoc.rootCatalog.asDictionary.Exists("/Outlines") Then
-                ' hack for now, just copy over
-                combinedPdfDoc.rootCatalog.asDictionary().Add "/Outlines", pdfDoc.rootCatalog.asDictionary().Item("/Outlines")
+        ' since we are about to remove it, we use 1st pdf doc's /Root id for our new top level /Pages (so we have for /Parent references)
+        ' Note: once we add pdfDoc.pages to combinedPdfDoc.pages and save, we can no longer change id of combinedPdfDoc.pages
+        With combinedPdfDoc
+            If .pages.id < 0 Then
+                .pages.id = pdfDoc.rootCatalog.id
             End If
-#If False Then
-            ' so remove pages object for now, we add a single one back after we have gone through all of them
-            pdfDoc.objectCache.Remove pages.id
-            Set combinedPdfDoc.pages = CombinePages(oPages, pages, baseId)
-#Else
-            ' instead of removing /Pages and combining into a single /Pages, we add a higher level /Pages
-            ' that points to all /Pages, but we need to fixup their parents to point to our new /Pages
-            ' so we use 1st /Pages as new parent for all future /Pages
-            Dim obj As pdfValue
-            Set obj = New pdfValue
-            obj.valueType = PDF_ValueType.PDF_Reference
-            obj.Value = combinedPdfDoc.pages.id - baseId  ' Warning! this may be negative, but corrects when Saved and baseId added back!
-            'If pages.Value.Value.Exists("/Parent") Then
-            If pages.asDictionary.Exists("/Parent") Then
-                ' we don't handle this case, it shouldn't exist
-                Stop
-            Else
-                Set pages.asDictionary.Item("/Parent") = obj ' should be Reference obj
-            End If
-            ' and add to our top level /Pages
-            Set obj = combinedPdfDoc.pages.asDictionary.Item("/Kids")
-            Dim c As Collection
-            Set c = obj.Value
-            ' but as a reference
-            Set obj = New pdfValue
-            obj.valueType = PDF_ValueType.PDF_Reference
-            obj.Value = pages.id + baseId   ' we must correct id here as we don't update when saving this obj
-            c.Add obj
-            ' we also need to update our count
-            Set obj = combinedPdfDoc.pages.asDictionary.Item("/Count")
-            ' ### not +1 as not a count of /Kids but /Count of total pages, so need to sum child counts
-            'obj.value = CLng(obj.value + 1)
-            Dim Count As Long
-            Count = CLng(pages.asDictionary.Item("/Count").Value)
-            obj.Value = CLng(obj.Value + Count)
-#End If
+        End With
+        
+        ' remove /Root object, we need to copy/merge some optional fields such as /Outline for bookmarks
+        ' and ensure only left with 1 /Root
+        pdfDoc.objectCache.Remove pdfDoc.rootCatalog.id
+        ' also need to remove /Info from cache
+        If pdfDoc.objectCache.Exists(pdfDoc.Info.id) Then
+            pdfDoc.objectCache.Remove pdfDoc.Info.id
         End If
         
-        combinedPdfDoc.SavePdfObjects outputFileNum, pdfDoc.objectCache, offset, baseId
+        ' we inject a new top level /Pages object which we add all the document /Pages to
+        ' so we need to add this /Pages to our top level /Pages and add a /Parent indirect reference
+        combinedPdfDoc.AddPages pdfDoc.pages
+        
+        If pdfDoc.rootCatalog.hasKey("/Outlines") Then
+            ' hack for now, just copy over
+            combinedPdfDoc.rootCatalog.asDictionary().Add "/Outlines", pdfDoc.rootCatalog.asDictionary().Item("/Outlines")
+        End If
+            
+        combinedPdfDoc.SavePdfObjects outputFileNum, pdfDoc.objectCache, offset
         
         ' determine highest id used, 1st obj in next file will start at this + 1
         ' Note: we need to use pdfDoc.xrefTable's size and not combinedPdfDoc.xrefTable as we are reserving full count from just loaded pdf document
         baseId = baseId + pdfDoc.xrefTable.Count - 1 ' highest id possible so far
+        combinedPdfDoc.nextObjId = baseId + 1
         DoEvents
     Next ndx
     
+    ' we need to set valid id's for our top level objs
+    With combinedPdfDoc
+        .Info.id = .nextObjId
+        .rootCatalog.id = .nextObjId
+    End With
+    
     ' save updated /Pages object (but not nested objects as already saved)
     combinedPdfDoc.SavePdfObject outputFileNum, combinedPdfDoc.pages, offset
+    combinedPdfDoc.SavePdfObject outputFileNum, combinedPdfDoc.rootCatalog, offset
     
     ' writes out trailer and cross reference table
     combinedPdfDoc.SavePdfTrailer outputFileNum, offset

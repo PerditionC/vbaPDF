@@ -201,7 +201,7 @@ End Type
 
 #If x32 Then
 Private Type EnumerableVariant
-    Value As Variant
+    value As Variant
     Meta As Long
     IsItemObj As Boolean
     IsKeyObj As Boolean
@@ -418,7 +418,7 @@ End Function
 '   -    9: invalid key (key is not associated with any element)
 '   -  450: 'Set' is missing when assigning an object
 '@DefaultMember
-Public Property Get Item(ByRef Key As Variant) As Variant
+Public Property Get Item(ByRef key As Variant) As Variant
 Attribute Item.VB_UserMemId = 0
 'Attribute Item.VB_UserMemId = 0
 #If x64StackIssues Then
@@ -437,17 +437,17 @@ Attribute Item.VB_UserMemId = 0
 #If StrictScriptingMode = 0 Then
     If Vars.CreateEmptyIfMissingKey Then
 #End If
-        GetIndex Key, i, Vars.AddHash.hVal _
+        GetIndex key, i, Vars.AddHash.hVal _
                        , Vars.AddHash.groupSlot _
                        , Vars.AddHash.controlByte
         If i = notFound Then
             Vars.AddHash.isSet = True
-            Add Key, Empty
+            Add key, Empty
             Exit Property
         End If
 #If StrictScriptingMode = 0 Then
     Else
-        GetIndex Key, i
+        GetIndex key, i
         'We raise error manually to avoid issue #14
         'https://github.com/cristianbuse/VBA-FastDictionary/issues/14
         If i = notFound Then Err.Raise 9
@@ -463,16 +463,16 @@ Attribute Item.VB_UserMemId = 0
         Item = Vars.Items(i)
     End If
 End Property
-Public Property Let Item(ByRef Key As Variant, ByRef Item As Variant)
+Public Property Let Item(ByRef key As Variant, ByRef Item As Variant)
     If IsObject(Item) Or (VarType(Item) = vbDataObject) Then
         Err.Raise 450, TypeName(Me) & ".Item", "'Set' is required"
     End If
-    Dim i As Long: GetIndex Key, i, Vars.AddHash.hVal _
+    Dim i As Long: GetIndex key, i, Vars.AddHash.hVal _
                                   , Vars.AddHash.groupSlot _
                                   , Vars.AddHash.controlByte
     If i = notFound Then
         Vars.AddHash.isSet = True
-        Add Key, Item
+        Add key, Item
         Exit Property
     End If
     #If x64 Then
@@ -482,13 +482,13 @@ Public Property Let Item(ByRef Key As Variant, ByRef Item As Variant)
     #End If
     Vars.Items(i) = Item
 End Property
-Public Property Set Item(ByRef Key As Variant, ByRef Item As Object)
-    Dim i As Long: GetIndex Key, i, Vars.AddHash.hVal _
+Public Property Set Item(ByRef key As Variant, ByRef Item As Object)
+    Dim i As Long: GetIndex key, i, Vars.AddHash.hVal _
                                   , Vars.AddHash.groupSlot _
                                   , Vars.AddHash.controlByte
     If i = notFound Then
         Vars.AddHash.isSet = True
-        Add Key, Item
+        Add key, Item
         Exit Property
     End If
     #If x64 Then
@@ -564,7 +564,7 @@ End Sub
 'If IgnoreErrors = False, raises error:
 ' -   5 if an Array or UDT is passed as Key
 ' - 457 if a duplicated key was specified AND AllowDuplicateKeys = False
-Public Function Add(ByRef Key As Variant _
+Public Function Add(ByRef key As Variant _
                   , ByRef Item As Variant _
                   , Optional ByVal IgnoreErrors As Boolean = False) As Boolean
     Dim hVal As Long
@@ -578,7 +578,7 @@ Public Function Add(ByRef Key As Variant _
         controlByte = Vars.AddHash.controlByte
         Vars.AddHash.isSet = False
     Else
-        GetIndex Key, i, hVal, groupSlot, controlByte, , Vars.AllowDuplicateKeys _
+        GetIndex key, i, hVal, groupSlot, controlByte, , Vars.AllowDuplicateKeys _
                                                        , IgnoreErrors
         If i <> notFound Then
             If IgnoreErrors Then Exit Function
@@ -631,7 +631,7 @@ Public Function Add(ByRef Key As Variant _
     End With
     '
 #If x64 Then
-    If hVal And hmObject Then Set Vars.Keys(i) = Key Else Vars.Keys(i) = Key
+    If hVal And hmObject Then Set Vars.Keys(i) = key Else Vars.Keys(i) = key
     If Vars.Enums.hasEnum Then
         RemoveUnusedEnums
         If i > 0 Then
@@ -653,10 +653,10 @@ Public Function Add(ByRef Key As Variant _
 #Else
     With Vars.Keys(i)
         .IsKeyObj = CBool(hVal And hmObject)
-        If .IsKeyObj Then Set .Value = Key Else .Value = Key
+        If .IsKeyObj Then Set .value = key Else .value = key
         If Vars.Enums.hasEnum Then
             RemoveUnusedEnums
-            If i > 0 Then Vars.Keys(i - 1).NextPtr = VarPtr(.Value)
+            If i > 0 Then Vars.Keys(i - 1).NextPtr = VarPtr(.value)
         End If
         .IsItemObj = IsObject(Item)
         If .IsItemObj Then
@@ -724,7 +724,7 @@ End Sub
 '|1|               | 0| 0|       - Input is Null (bit 0 is 1 - vbNull)
 '|2|               | 0| 0|       - Key was removed (HashMeta.hmRemoved)
 '|?|?|?|?|...| ?| ?| 0| 0|       - Input is +Inf or -Inf or QNaN or SNaN
-Private Sub GetIndex(ByRef Key As Variant _
+Private Sub GetIndex(ByRef key As Variant _
                    , Optional ByRef outIndex As Long _
                    , Optional ByRef hVal As Long _
                    , Optional ByRef groupSlot As Long _
@@ -740,7 +740,7 @@ Private Sub GetIndex(ByRef Key As Variant _
     Dim i As Long
     '
     'Hash value
-    If IsObject(Key) Then vt = vbObject Else vt = VarType(Key)
+    If IsObject(key) Then vt = vbObject Else vt = VarType(key)
     If vt = vbString Then
         Const tPrime As Long = 131&
         Const tOverflowMask As Long = &H7FFFFF
@@ -749,12 +749,12 @@ Private Sub GetIndex(ByRef Key As Variant _
             If .isScrAvailable Then
                 Const minLenBinary As Long = 6
                 If Vars.Compare = vbBinaryCompare Then
-                    .saI.rgsabound0.cElements = Len(Key)
+                    .saI.rgsabound0.cElements = Len(key)
                     If minLenBinary < .saI.rgsabound0.cElements Then
                         .sdl.compMode = vbBinaryCompare
-                        hVal = Mem.TextHash(0)(Key) Or hmText 'Early-binded
+                        hVal = Mem.TextHash(0)(key) Or hmText 'Early-binded
                     Else 'Faster to loop integers
-                        .saI.pvData = StrPtr(Key)
+                        .saI.pvData = StrPtr(key)
                         hVal = 0
                         For i = 0 To .saI.rgsabound0.cElements - 1
                             hVal = (hVal And tOverflowMask) * tPrime + Mem.RInt(i)
@@ -766,15 +766,15 @@ Private Sub GetIndex(ByRef Key As Variant _
                 Else
                     .sdl.compMode = vbTextCompare
                     .sdl.lcid = Vars.LocaleID
-                    hVal = Mem.TextHash(0)(Key) Or hmText 'Early-binded
+                    hVal = Mem.TextHash(0)(key) Or hmText 'Early-binded
                 End If
             Else
 #End If
-                .saI.rgsabound0.cElements = Len(Key)
+                .saI.rgsabound0.cElements = Len(key)
                 If Vars.Compare = vbBinaryCompare Then
-                    .saI.pvData = StrPtr(Key)
+                    .saI.pvData = StrPtr(key)
                 Else
-                    Dim s As String: s = LCase$(Key)
+                    Dim s As String: s = LCase$(key)
                     .saI.pvData = StrPtr(s)
                 End If
                 hVal = 0
@@ -793,7 +793,7 @@ Private Sub GetIndex(ByRef Key As Variant _
         Static iUnk As stdole.IUnknown 'Dim is slower
         '
         vt = vbObject 'Replace vbDataObject if needed
-        Set iUnk = Key
+        Set iUnk = key
         #If x64 Then
             Const oPreMask As LongLong = &H6FFFFFFFFFFFFFFF^
             Dim ll As LongLong
@@ -817,10 +817,10 @@ Private Sub GetIndex(ByRef Key As Variant _
         With Mem.Common(0)
             If vt = vbError Then
                 m = hmError
-                .d = CDbl(Key)
+                .d = CDbl(key)
             Else
                 m = hmNumber
-                .d = Key
+                .d = key
             End If
             #If x64 Then
                 .saP.pvData = .dPtr
@@ -901,26 +901,26 @@ Private Sub GetIndex(ByRef Key As Variant _
                 If (Vars.Meta(outIndex) And keyBitMask) = hVal Then
                     If vt = vbString And (Vars.Compare > vbBinaryCompare) Then
                         If StrComp(Vars.Keys(outIndex) _
-                                 , Key, Vars.Compare) = 0 Then Exit Sub
+                                 , key, Vars.Compare) = 0 Then Exit Sub
                     ElseIf vt = vbObject Then 'vbDataObject was replaced
-                        If Vars.Keys(outIndex) Is Key Then Exit Sub
+                        If Vars.Keys(outIndex) Is key Then Exit Sub
                     ElseIf hVal < HashMeta.[_modHM] Then 'Already matched
                         Exit Sub
                     Else 'Number, Error or case-sensitive Text
-                        If Vars.Keys(outIndex) = Key Then Exit Sub
+                        If Vars.Keys(outIndex) = key Then Exit Sub
                     End If
                 End If
 #Else
                 If Vars.Keys(outIndex).Meta = hVal Then
                     If vt = vbString And (Vars.Compare > vbBinaryCompare) Then
-                        If StrComp(Vars.Keys(outIndex).Value _
-                                 , Key, Vars.Compare) = 0 Then Exit Sub
+                        If StrComp(Vars.Keys(outIndex).value _
+                                 , key, Vars.Compare) = 0 Then Exit Sub
                     ElseIf vt = vbObject Then 'vbDataObject was replaced
-                        If Vars.Keys(outIndex).Value Is Key Then Exit Sub
+                        If Vars.Keys(outIndex).value Is key Then Exit Sub
                     ElseIf hVal < HashMeta.[_modHM] Then 'Already matched
                         Exit Sub
                     Else 'Number, Error or case-sensitive Text
-                        If Vars.Keys(outIndex).Value = Key Then Exit Sub
+                        If Vars.Keys(outIndex).value = key Then Exit Sub
                     End If
                 End If
 #End If
@@ -961,28 +961,28 @@ End Property
 Public Property Get AllowDuplicateKeys() As Boolean
     AllowDuplicateKeys = Vars.AllowDuplicateKeys
 End Property
-Public Property Let AllowDuplicateKeys(ByVal newValue As Boolean)
-    If Vars.UsedCount > 0 And (Vars.AllowDuplicateKeys Xor newValue) Then
+Public Property Let AllowDuplicateKeys(ByVal NewValue As Boolean)
+    If Vars.UsedCount > 0 And (Vars.AllowDuplicateKeys Xor NewValue) Then
         Err.Raise 5, TypeName(Me) & ".AllowDuplicateKeys", "Dict contains data"
     End If
-    Vars.AllowDuplicateKeys = newValue
+    Vars.AllowDuplicateKeys = NewValue
 End Property
 
 Public Property Get Count() As Long
     Count = Vars.UsedCount
 End Property
 
-Public Function Exists(ByRef Key As Variant _
+Public Function Exists(ByRef key As Variant _
                      , Optional ByVal IgnoreErrors As Boolean = False) As Boolean
-    Dim i As Long: GetIndex Key, i, IgnoreErrors:=IgnoreErrors
+    Dim i As Long: GetIndex key, i, IgnoreErrors:=IgnoreErrors
     Exists = (i > notFound)
 End Function
 
 'Returns -1 if invalid key and IgnoreErrors = True
 'Raises error 9 if invalid key and IgnoreErrors = False
-Public Function Index(ByRef Key As Variant _
+Public Function Index(ByRef key As Variant _
                     , Optional ByVal IgnoreErrors As Boolean = False) As Long
-    Dim i As Long: GetIndex Key, i, IgnoreErrors:=IgnoreErrors
+    Dim i As Long: GetIndex key, i, IgnoreErrors:=IgnoreErrors
     If i <= notFound Then
         If IgnoreErrors Then
             Index = -1
@@ -1128,7 +1128,7 @@ End Sub
 '   - 32811: if StrictScriptingMode = True
 ' * invalid NewKey (key is already associated with an element). Error code:
 '   -   457
-Public Property Let Key(ByRef OldKey As Variant, ByRef NewKey As Variant)
+Public Property Let key(ByRef OldKey As Variant, ByRef NewKey As Variant)
     Dim hVal As Long
     Dim groupSlot As Long
     Dim posInGroup As Long
@@ -1169,7 +1169,7 @@ Public Property Let Key(ByRef OldKey As Variant, ByRef NewKey As Variant)
 #Else
     With Vars.Keys(i)
         .IsKeyObj = CBool(hVal And HashMeta.hmObject)
-        If .IsKeyObj Then Set .Value = NewKey Else .Value = NewKey
+        If .IsKeyObj Then Set .value = NewKey Else .value = NewKey
         .Meta = hVal
     End With
 #End If
@@ -1220,9 +1220,9 @@ Public Property Get KeyAtIndex(ByVal i As Long) As Variant
     End If
 #Else
     If Vars.Keys(i).IsKeyObj Then
-        Set KeyAtIndex = Vars.Keys(i).Value
+        Set KeyAtIndex = Vars.Keys(i).value
     Else
-        KeyAtIndex = Vars.Keys(i).Value
+        KeyAtIndex = Vars.Keys(i).value
     End If
 #End If
 End Property
@@ -1268,7 +1268,7 @@ Public Property Get Keys() As Variant()
     For i = 0 To Vars.Count - 1
         With Vars.Keys(i)
             If .Meta <> hmRemoved Then
-                If .IsKeyObj Then Set res(j) = .Value Else res(j) = .Value
+                If .IsKeyObj Then Set res(j) = .value Else res(j) = .value
                 j = j + 1
             End If
         End With
@@ -1311,8 +1311,8 @@ Public Property Get KeysItems2D() As Variant()
             #Else
                 With .Keys(i)
                     If .Meta <> hmRemoved Then
-                        If .IsKeyObj Then Set res(j, 0) = .Value _
-                                     Else res(j, 0) = .Value
+                        If .IsKeyObj Then Set res(j, 0) = .value _
+                                     Else res(j, 0) = .value
                         If .IsItemObj Then Set res(j, 1) = Vars.Items(i) _
                                       Else res(j, 1) = Vars.Items(i)
                         j = j + 1
@@ -1348,7 +1348,7 @@ End Sub
 ' * invalid key (key is not associated with any element). Error code:
 '   -     9: if StrictScriptingMode = False
 '   - 32811: if StrictScriptingMode = True
-Public Function Remove(ByRef Key As Variant _
+Public Function Remove(ByRef key As Variant _
                      , Optional ByVal IgnoreErrors As Boolean = False) As Boolean
     Dim groupSlot As Long
     Dim posInGroup As Long
@@ -1357,7 +1357,7 @@ Public Function Remove(ByRef Key As Variant _
     Dim j As Long
     Dim ptr As LongPtr
     '
-    GetIndex Key, i, , groupSlot, , posInGroup, , IgnoreErrors
+    GetIndex key, i, , groupSlot, , posInGroup, , IgnoreErrors
     If i <= notFound Then
         If IgnoreErrors Then Exit Function
         #If StrictScriptingMode Then
@@ -1383,7 +1383,7 @@ Public Function Remove(ByRef Key As Variant _
             Vars.Keys(i) = Empty
             Vars.Meta(i) = hmRemoved
         #Else
-            Vars.Keys(i).Value = Empty
+            Vars.Keys(i).value = Empty
             Vars.Keys(i).Meta = hmRemoved
         #End If
         If Vars.Enums.hasEnum Then 'Link previous to next
@@ -1441,7 +1441,7 @@ Public Function Remove(ByRef Key As Variant _
     #If x64 Then
         Vars.Keys(lastPos) = Empty
     #Else
-        Vars.Keys(lastPos).Value = Empty
+        Vars.Keys(lastPos).value = Empty
     #End If
     Vars.Count = Vars.Count - 1
 End Function
@@ -1644,7 +1644,7 @@ Friend Sub InitStructs(ByRef dict As Dictionary _
         Const opNumDictHashVal As Long = 21
         Const opNumCollItem As Long = 7
         Static mainVTable(0 To dictMainVTableSize - 1) As LongPtr
-        Static C As Collection
+        Static c As Collection
         Static saC As SAFEARRAY_1D
         Dim i As Long
         '
@@ -1653,7 +1653,7 @@ Friend Sub InitStructs(ByRef dict As Dictionary _
         '   calls to HashVal with early binding speed without a dll reference
         '
         InitSafeArray saC, ptrSize
-        saC.pvData = VarPtr(C)
+        saC.pvData = VarPtr(c)
         saC.rgsabound0.cElements = 1
         saPtrs(4) = VarPtr(saC)
         '
@@ -1695,7 +1695,7 @@ Friend Sub InitStructs(ByRef dict As Dictionary _
             h.sdl.hashModulo = HashMeta.[_modHM]
             h.sdl.refCount = 2 'To avoid deallocation
             h.saP.rgsabound0.cElements = 1
-            h.saP.pvData = VarPtr(C)
+            h.saP.pvData = VarPtr(c)
             Mem.RPtr(0) = VarPtr(h.sdl)
         End If
         #If x64StackIssues Then
@@ -1818,7 +1818,7 @@ End Sub
 
 #If Windows And FastDealloc Then
 Private Property Let MemLongPtr(ByVal memAddress As LongPtr _
-                              , ByVal newValue As LongPtr)
+                              , ByVal NewValue As LongPtr)
     Const VT_BYREF As Long = &H4000
     Dim memValue As Variant
     Dim remoteVT As Variant
@@ -1829,11 +1829,11 @@ Private Property Let MemLongPtr(ByVal memAddress As LongPtr _
     VariantCopy remoteVT, VarPtr(fv) 'Init VarType ByRef
     '
 #If Win64 Then 'Cannot assign LongLong ByRef
-    Dim C As Currency
-    RemoteAssign memValue, VarPtr(newValue), remoteVT, vbCurrency + VT_BYREF, C, memValue
-    RemoteAssign memValue, memAddress, remoteVT, vbCurrency + VT_BYREF, memValue, C
+    Dim c As Currency
+    RemoteAssign memValue, VarPtr(NewValue), remoteVT, vbCurrency + VT_BYREF, c, memValue
+    RemoteAssign memValue, memAddress, remoteVT, vbCurrency + VT_BYREF, memValue, c
 #Else 'Can assign Long ByRef
-    RemoteAssign memValue, memAddress, remoteVT, vbLong + VT_BYREF, memValue, newValue
+    RemoteAssign memValue, memAddress, remoteVT, vbLong + VT_BYREF, memValue, NewValue
 #End If
 End Property
 Private Sub RemoteAssign(ByRef memValue As Variant _
@@ -1841,10 +1841,10 @@ Private Sub RemoteAssign(ByRef memValue As Variant _
                        , ByRef remoteVT As Variant _
                        , ByVal newVT As VbVarType _
                        , ByRef targetVariable As Variant _
-                       , ByRef newValue As Variant)
+                       , ByRef NewValue As Variant)
     memValue = memAddress
     remoteVT = newVT
-    targetVariable = newValue
+    targetVariable = NewValue
     remoteVT = vbEmpty
 End Sub
 #End If
@@ -1963,9 +1963,9 @@ Public Function Factory() As Dictionary
     Set Factory = New Dictionary
 End Function
 
-Public Property Get HashVal(ByRef Key As Variant _
+Public Property Get HashVal(ByRef key As Variant _
                           , Optional ByVal IgnoreErrors As Boolean = False) As Long
-    GetIndex Key, , HashVal, hashOnly:=True, IgnoreErrors:=IgnoreErrors
+    GetIndex key, , HashVal, hashOnly:=True, IgnoreErrors:=IgnoreErrors
 End Property
 
 Private Function DictEnum() As IUnknown
@@ -2242,7 +2242,7 @@ Friend Sub ManageDeepNested(ByRef v As DictionaryVariables _
             If v.Meta(i) And hmObject Then dicts.Add v.Keys(i)
             If v.Meta(i) And isItemObjBit Then dicts.Add v.Items(i)
         #Else
-            If v.Keys(i).IsKeyObj Then dicts.Add v.Keys(i).Value
+            If v.Keys(i).IsKeyObj Then dicts.Add v.Keys(i).value
             If v.Keys(i).IsItemObj Then dicts.Add v.Items(i)
         #End If
         Next i
@@ -2458,16 +2458,16 @@ End Property
 Public Property Get CreateEmptyItemIfMissingKey() As Boolean
     CreateEmptyItemIfMissingKey = Vars.CreateEmptyIfMissingKey
 End Property
-Public Property Let CreateEmptyItemIfMissingKey(ByVal newValue As Boolean)
-    Vars.CreateEmptyIfMissingKey = newValue
+Public Property Let CreateEmptyItemIfMissingKey(ByVal NewValue As Boolean)
+    Vars.CreateEmptyIfMissingKey = NewValue
 End Property
 
 'Alternative method to Item (Get)
 'Does not throw
 'Does not add Key if missing
-Public Function TryGetItem(ByRef Key As Variant _
+Public Function TryGetItem(ByRef key As Variant _
                          , ByRef OutItem As Variant) As Boolean
-    Dim i As Long: GetIndex Key, i, IgnoreErrors:=True
+    Dim i As Long: GetIndex key, i, IgnoreErrors:=True
     If i <= notFound Then Exit Function
 #If x64 Then
     If Vars.Meta(i) And isItemObjBit Then
