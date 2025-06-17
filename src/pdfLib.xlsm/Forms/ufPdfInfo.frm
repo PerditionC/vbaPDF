@@ -18,9 +18,9 @@ Option Explicit
 Public pdfDoc As pdfDocument
 
 Private Sub cbContinue_Click()
-    pdfDoc.renumberIds pdfDoc.trailer, 100
-    pdfDoc.savePdfAs "renumberd.pdf"
-    Stop
+    'pdfDoc.renumberIds pdfDoc.trailer, 100
+    'pdfDoc.savePdfAs "renumberd.pdf"
+    'Stop
     Me.Hide
     Unload Me
 End Sub

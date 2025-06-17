@@ -137,6 +137,7 @@ Function GetWord(ByRef bytes() As Byte, ByRef offset As Long) As String
 errHandler:
     Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
     Stop
+    Resume
 End Function
 
 

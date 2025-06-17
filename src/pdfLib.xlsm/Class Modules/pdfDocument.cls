@@ -392,48 +392,97 @@ End Sub
 
 
 ' updates id of all objects under root pdfValue beginning at baseId
-' Note: use trailer as root to renumber whole document
+' Note: if root is Nothing then will update whole document including caches
 ' Warning: assumes each obj id refers to same obj and objReference instances
-Public Function renumberIds(ByRef root As pdfValue, ByVal baseId As Long, Optional ByRef visited As Dictionary = Nothing) As Long
+Public Function renumberIds(ByVal baseId As Long, Optional ByRef root As pdfValue = Nothing, Optional ByRef visited As Dictionary = Nothing) As Long
     On Error GoTo errHandler
-    If visited Is Nothing Then Set visited = New Dictionary
     Dim v As Variant
     Dim obj As pdfValue
-    ' sanity check
-    If root Is Nothing Then Exit Function
+    Dim fixCache As Boolean
+    
+    ' renumber whole tree?
+    If root Is Nothing Then
+        fixCache = True
+        Set root = trailer
+    End If
+    
+    ' should be Nothing on first call, we use this to avoid recursion and thus renumber already renumbered objs
+    If visited Is Nothing Then
+        Set visited = New Dictionary
+    End If
+    
     ' don't renumber same object more than once
     If root.id <> 0 Then
-        If visited.Exists(root.id) Then
+        If visited.Exists(root) Then
             renumberIds = baseId
             Exit Function
         End If
         ' and actually do the renumbering
         root.id = baseId
         baseId = baseId + 1
-        visited.Add root.id, root.id
+        ' Note: we use actual object and not id here as temp there may be multiple objs with same id
+        ' e.g. obj 1 renumbered to 4, and there is still an object 4 not yet renumbered
+        visited.Add root, root
     End If
     ' update any children
     Select Case root.valueType
         Case PDF_ValueType.PDF_Array
             For Each v In root.value
                 Set obj = v
-                baseId = renumberIds(obj, baseId, visited)
+                baseId = renumberIds(baseId, obj, visited)
             Next v
         Case PDF_ValueType.PDF_Dictionary
             For Each v In root.value.Items
                 Set obj = v
-                baseId = renumberIds(obj, baseId, visited)
+                baseId = renumberIds(baseId, obj, visited)
             Next v
         Case PDF_ValueType.PDF_Reference
             Set obj = getObject(root.value, 0)
-            baseId = renumberIds(obj, baseId, visited)
+            baseId = renumberIds(baseId, obj, visited)
         Case PDF_ValueType.PDF_Trailer, PDF_ValueType.PDF_Object
-            baseId = renumberIds(root.value, baseId, visited)
+            baseId = renumberIds(baseId, root.value, visited)
         Case Else
             ' no nested objects that need id's updated
     End Select
     ' last id used, or same as provided if nothing updated
     renumberIds = baseId
+    
+    ' because we renumbered everything, we need to invalidate or rebuild our cache's
+    ' but only from top level call
+    ' note: because we have renumbered, we also invalidate our content buffer as it refers to old ids
+    If fixCache Then
+        'Set visited = Nothing ' this is ByRef so only set to Nothing if originally Nothing
+        
+        If ByteArraySize(content) >= 0 Then Erase content
+        Dim newDict As Dictionary
+        If Not objectCache Is Nothing Then
+            Set newDict = New Dictionary
+            For Each v In objectCache.Items
+                Set obj = v
+                If obj.id <> 0 Then Set newDict(obj.id) = obj
+            Next v
+            Set objectCache = newDict
+            Set newDict = Nothing
+        End If
+    
+        If Not refCache Is Nothing Then
+            Set newDict = New Dictionary
+            For Each v In refCache.Items
+                Set obj = v
+                With obj
+                    If .id <> 0 Then
+                        Set newDict(.id & "_" & .generation) = obj
+                        Set newDict(.id & " " & .generation & " R") = obj.referenceObj
+                    End If
+                End With
+            Next v
+            Set refCache = newDict
+            Set newDict = Nothing
+        End If
+    
+        Set sosCache = Nothing
+    End If
+    
     Exit Function
 errHandler:
     Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
@@ -453,7 +502,7 @@ Public Function getObject(ByVal id As Long, ByVal generation As Long, Optional B
     Set obj = getCachedObject(id, generation)
     ' if it wasn't there then try loading from content()
     If obj.valueType = PDF_ValueType.PDF_Null Then
-        Set obj = loadObject(content, xrefTable, id)
+        Set obj = loadObject(id)
         If obj Is Nothing Then Set obj = New pdfValue
         
         ' if successfully loaded, update our object cache
@@ -1325,7 +1374,6 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional ByRef Me
         Case PDF_ValueType.PDF_Reference, PDF_ValueType.PDF_Object
             Dim words(0 To 2) As String
             words(0) = GetWord(bytes, offset)
-If IsMatch(words(0), "3") Then Stop
             offset = SkipWhiteSpace(bytes, offset)
             words(1) = GetWord(bytes, offset)
             offset = SkipWhiteSpace(bytes, offset)
@@ -1446,19 +1494,33 @@ End Function
 
 
 ' extracts/parses pdf object from raw pdf content()
+' uses xrefTable to determine offset directly or obtain using cross reference stream
 ' due to potential slowness uncompressing in VBA, stream object streams should be cached
 ' the sosCache is only used for stream object streams and only if provided
 ' the refCache is to ensure only 1 indirect reference object instance is created for each object
 ' this will use provided VBA reference object instance instead of creating a new [different] one
-Function loadObject(ByRef content() As Byte, ByRef xrefTable As Dictionary, ByVal Index As Long) As pdfValue
+' forceReload bypasses refCache and returns a new VBA object instance ***
+' *** changes to this object's id may not effect any other object nor their reference values
+' *** if object previously loaded returns a new instance, otherwise results same as if is False
+' *** possibly useful to duplicate an object to be mutated and added, but use with care
+Function loadObject(ByVal Index As Long, Optional forceReload As Boolean = False) As pdfValue
     On Error GoTo errHandler
     Dim obj As pdfValue
+    
+    ' speed up, ensure single object returned, and avoid issues when objects are removed from current objectCache
+    If (Not forceReload) And (Not refCache Is Nothing) Then
+        If refCache.Exists(Index) Then
+            Set loadObject = refCache(Index)
+            Exit Function
+        End If
+    End If
+    
     If xrefTable.Exists(Index) Then
         Dim entry As xrefEntry
         Set entry = xrefTable.Item(Index)
         If entry.isFree Or ((Not entry.isEmbeded) And (entry.offset <= 0)) Then GoTo NullValue
         Dim offset As Long: offset = entry.offset
-        If offset > UBound(content) Then GoTo NullValue
+        If offset > ByteArraySize(content) Then GoTo NullValue
         If entry.isEmbeded Then
             Dim cntrObjEntry As xrefEntry
             Set cntrObjEntry = xrefTable.Item(entry.embedObjId)
@@ -1468,7 +1530,7 @@ Function loadObject(ByRef content() As Byte, ByRef xrefTable As Dictionary, ByVa
                 If sosCache.Exists(entry.embedObjId) Then Set cntrObj = sosCache(entry.embedObjId)
             End If
             If cntrObj Is Nothing Then  ' not in cache or no cache provided
-                Set cntrObj = loadObject(content, xrefTable, entry.embedObjId)
+                Set cntrObj = loadObject(entry.embedObjId)
                 If Not sosCache Is Nothing Then Set sosCache(entry.embedObjId) = cntrObj    ' add/update cache
             End If
             
@@ -1567,7 +1629,7 @@ Function GetRootObject(ByRef content() As Byte, ByRef trailer As pdfValue, ByRef
     ' get either reference or /Root object itself
     Set root = GetRoot(trailer)
     If root.valueType = PDF_ValueType.PDF_Reference Then
-        Set root = loadObject(content, xrefTable, root.value)
+        Set root = loadObject(root.value)
     'ElseIf root.valueType = PDF_ValueType.PDF_Object Then
     End If
     
@@ -1607,7 +1669,7 @@ Sub GetObjectsInTree(ByRef root As pdfValue, ByRef content() As Byte, ByRef xref
         Case PDF_ValueType.PDF_Reference
             ' we need to load object
             If Not objects.Exists(CLng(root.value)) Then
-                Set obj = loadObject(content, xrefTable, root.value)
+                Set obj = loadObject(root.value)
                 objects.Add CLng(root.value), obj
                 GetObjectsInTree obj, content, xrefTable, objects
             End If

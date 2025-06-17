@@ -2,8 +2,19 @@ Attribute VB_Name = "Main"
 Option Explicit
 
 
+' simple function lets user pick files to combine
+Public Sub PickAndCombinePdfFiles()
+    Dim files() As String
+    files = PickFiles()
+    Dim ufFileOrder As ufFileList: Set ufFileOrder = New ufFileList
+    ufFileOrder.list = files
+    ufFileOrder.Show
+    files = ufFileOrder.list
+    CombinePDFs files, "combined.pdf"
+End Sub
+
+
 Public Sub CombinePDFs(ByRef sourceFiles() As String, ByRef outFile As String)
-    'Dim oPages As pdfValue  ' /Type /Pages with /Count # /Kids [ /Page references ...]
     Dim combinedPdfDoc As pdfDocument: Set combinedPdfDoc = New pdfDocument
     ' initialize with some basic structures
     combinedPdfDoc.AddInfo
@@ -17,15 +28,8 @@ Public Sub CombinePDFs(ByRef sourceFiles() As String, ByRef outFile As String)
     Dim outputFileNum As Integer
     outputFileNum = combinedPdfDoc.SavePdfHeader(outFile, offset)
     
-    Dim baseId As Long
-    ' we don't yet know the id's used by our /Root, /Info and top level /Pages objs
-    With combinedPdfDoc
-        .rootCatalog.id = -1
-        .Info.id = -2
-        .pages.id = -3
-    
-        baseId = .nextObjId
-    End With
+    ' get where to start renumbering objs in pdf, we need to skip past our toplevel /Root, /Info, /Pages, & /Outlines
+    Dim baseId As Long: baseId = combinedPdfDoc.nextObjId
     
     Dim ndx As Long
     For ndx = LBound(sourceFiles) To UBound(sourceFiles)
@@ -37,35 +41,28 @@ Public Sub CombinePDFs(ByRef sourceFiles() As String, ByRef outFile As String)
         pdfDoc.loadPdf sourceFiles(ndx)
         pdfDoc.parsePdf
         
-        ' for each additional document we need to update /Pages
-        Dim pages As pdfValue
-        Set pages = pdfDoc.pages()
-        
-        ' since we are about to remove it, we use 1st pdf doc's /Root id for our new top level /Pages (so we have for /Parent references)
-        ' Note: once we add pdfDoc.pages to combinedPdfDoc.pages and save, we can no longer change id of combinedPdfDoc.pages
-        With combinedPdfDoc
-            If .pages.id < 0 Then
-                .pages.id = pdfDoc.rootCatalog.id
-            End If
-        End With
-        
-        ' remove /Root object, we need to copy/merge some optional fields such as /Outline for bookmarks
-        ' and ensure only left with 1 /Root
-        pdfDoc.objectCache.Remove pdfDoc.rootCatalog.id
-        ' also need to remove /Info from cache
-        If pdfDoc.objectCache.Exists(pdfDoc.Info.id) Then
-            pdfDoc.objectCache.Remove pdfDoc.Info.id
-        End If
-        
+        ' adjust obj id's so no conflict with previously stored ones
+        pdfDoc.renumberIds baseId
+            
         ' we inject a new top level /Pages object which we add all the document /Pages to
         ' so we need to add this /Pages to our top level /Pages and add a /Parent indirect reference
         combinedPdfDoc.AddPages pdfDoc.pages
         
+        ' we need to copy/merge some optional fields such as /Outline for bookmarks
         If pdfDoc.rootCatalog.hasKey("/Outlines") Then
             ' hack for now, just copy over
             combinedPdfDoc.rootCatalog.asDictionary().Add "/Outlines", pdfDoc.rootCatalog.asDictionary().Item("/Outlines")
         End If
             
+        ' remove /Root object and ensure only left with 1 /Root
+        ' Warning: objectCache is used to convert references to objs, so do not attempt to retrieve any
+        ' objects via obj reference after removing them from objectCache
+        pdfDoc.objectCache.Remove pdfDoc.rootCatalog.id
+        ' also need to remove /Info from cache
+        If pdfDoc.objectCache.Exists(pdfDoc.Info.id) Then
+            pdfDoc.objectCache.Remove pdfDoc.Info.id
+        End If
+        ' and now save all the pages and other non-toplevel objects to our combined document
         combinedPdfDoc.SavePdfObjects outputFileNum, pdfDoc.objectCache, offset
         
         ' determine highest id used, 1st obj in next file will start at this + 1
@@ -75,12 +72,6 @@ Public Sub CombinePDFs(ByRef sourceFiles() As String, ByRef outFile As String)
         DoEvents
     Next ndx
     
-    ' we need to set valid id's for our top level objs
-    With combinedPdfDoc
-        .Info.id = .nextObjId
-        .rootCatalog.id = .nextObjId
-    End With
-    
     ' save updated /Pages object (but not nested objects as already saved)
     combinedPdfDoc.SavePdfObject outputFileNum, combinedPdfDoc.pages, offset
     combinedPdfDoc.SavePdfObject outputFileNum, combinedPdfDoc.rootCatalog, offset
@@ -89,18 +80,6 @@ Public Sub CombinePDFs(ByRef sourceFiles() As String, ByRef outFile As String)
     combinedPdfDoc.SavePdfTrailer outputFileNum, offset
     'SavePdf outFile, trailer, oXrefTable, info, root, oPdfObjs
     Debug.Print "Saved " & outFile
-End Sub
-
-
-' simple function lets user pick files to combine
-Public Sub PickAndCombinePdfFiles()
-    Dim files() As String
-    files = PickFiles()
-    Dim ufFileOrder As ufFileList: Set ufFileOrder = New ufFileList
-    ufFileOrder.list = files
-    ufFileOrder.Show
-    files = ufFileOrder.list
-    CombinePDFs files, "combined.pdf"
 End Sub
 
 
