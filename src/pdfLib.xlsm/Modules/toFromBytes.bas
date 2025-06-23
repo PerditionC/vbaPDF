@@ -28,7 +28,7 @@ Function ByteArraySize(bytes() As Byte) As Long
     ' but if array is declared but not yet dimension, LBound() is 0 and UBound() is -1
     On Error GoTo errHandler
     If UBound(bytes) >= LBound(bytes) Then ' if not dim'd compares -1 to 0
-        ByteArraySize = UBound(bytes) - LBound(bytes)
+        ByteArraySize = UBound(bytes) - LBound(bytes) + 1
     End If
     Exit Function
 errHandler:
@@ -46,7 +46,7 @@ Function FindToken(ByRef buffer() As Byte, ByRef token As String, Optional start
     Dim ndx As Long, i As Long
     Dim tokenB() As Byte
     Dim tokenLen As Long
-    Dim upperBound As Long: upperBound = ByteArraySize(buffer)
+    Dim upperBound As Long: upperBound = ByteArraySize(buffer) - 1 ' we assume Dim (0 To N-1)
     If upperBound < 0 Then Exit Function ' no data, so token can't be found
     
     ' set startAt index if not explicitly provided
@@ -108,6 +108,16 @@ End Function
 ' returns as String all bytes from an offset until whitespace or non-regular character is found, i.e. returns from offset to end of current token
 ' offset is updated to index of whitespace character (or last character)
 Function GetWord(ByRef bytes() As Byte, ByRef offset As Long) As String
+    Dim word() As Byte
+    Dim count As Long
+    GetAsBytes bytes, offset, word, count
+    If count > 0 Then
+        GetWord = BytesToString(word, 0, count)
+    Else
+        GetWord = vbNullString
+    End If
+End Function
+Sub GetAsBytes(ByRef bytes() As Byte, ByRef offset As Long, ByRef word() As Byte, ByRef count As Long)
     On Error GoTo errHandler
     Dim i As Long
     For i = offset To UBound(bytes)
@@ -131,14 +141,17 @@ Function GetWord(ByRef bytes() As Byte, ByRef offset As Long) As String
         End Select
         DoEvents
     Next i
-    GetWord = BytesToString(bytes, offset, i - offset)
+    'GetWord = BytesToString(bytes, offset, i - offset)
+    count = i - offset
+    ReDim word(0 To count - 1)
+    CopyBytes bytes, word, offset, 0, count
     offset = i
-    Exit Function
+    Exit Sub
 errHandler:
     Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
     Stop
     Resume
-End Function
+End Sub
 
 
 ' updates offset to start of next non-whitespace index
@@ -173,22 +186,22 @@ End Function
 
 
 ' Helper function to copy range of bytes from one array to another
-Sub CopyBytes(ByRef src() As Byte, ByRef DST() As Byte, _
+Sub CopyBytes(ByRef src() As Byte, ByRef dst() As Byte, _
                    Optional ByVal srcOffset As Long = 0, Optional ByVal dstOffset As Long = 0, _
-                   Optional ByVal Count As Long = -1 _
+                   Optional ByVal count As Long = -1 _
                   )
     ' exit early if nothing to copy, avoids out of bounds for FASTCOPY if dstOffset = UBound(dst)+1 and count=0
-    If Count = 0 Then Exit Sub
+    If count = 0 Then Exit Sub
     If srcOffset < LBound(src) Then srcOffset = LBound(src)
-    If dstOffset < LBound(DST) Then dstOffset = LBound(DST)
-    If (Count < 0) Or ((Count + srcOffset) > (UBound(src) + 1)) Then Count = UBound(src) - srcOffset + 1
-    If dstOffset + Count > UBound(DST) + 1 Then ReDim Preserve DST(LBound(DST) To (dstOffset + Count - 1))
+    If dstOffset < LBound(dst) Then dstOffset = LBound(dst)
+    If (count < 0) Or ((count + srcOffset) > (UBound(src) + 1)) Then count = UBound(src) - srcOffset + 1
+    If dstOffset + count > UBound(dst) + 1 Then ReDim Preserve dst(LBound(dst) To (dstOffset + count - 1))
 #If FASTCOPY_ Then
-    CopyMemory VarPtr(DST(dstOffset)), VarPtr(src(srcOffset)), Count
+    CopyMemory VarPtr(dst(dstOffset)), VarPtr(src(srcOffset)), count
 #Else
     Dim i As Long
-    For i = 0 To Count - 1
-        DST(dstOffset + i) = src(srcOffset + i)
+    For i = 0 To count - 1
+        dst(dstOffset + i) = src(srcOffset + i)
         DoEvents
     Next i
 #End If
@@ -196,15 +209,15 @@ End Sub
 
 
 ' Helper function to convert byte array to string
-Function BytesToString(ByRef bytes() As Byte, Optional offset As Long = 0, Optional Count As Long = -1) As String
+Function BytesToString(ByRef bytes() As Byte, Optional offset As Long = 0, Optional count As Long = -1) As String
     Dim i As Long
     Dim tempStr As String
     If offset < LBound(bytes) Then offset = LBound(bytes)
-    If Count < 0 Then Count = UBound(bytes) + 1 - offset
-    If (Count + offset) > (UBound(bytes) + 1) Then Count = UBound(bytes) + 1 - offset
-    tempStr = Space(Count)
-    For i = offset To offset + Count - 1
-        Mid(tempStr, i - offset + 1, 1) = Chr(bytes(i))
+    If count < 0 Then count = UBound(bytes) + 1 - offset
+    If (count + offset) > (UBound(bytes) + 1) Then count = UBound(bytes) + 1 - offset
+    tempStr = Space(count)
+    For i = offset To offset + count - 1
+        Mid(tempStr, i - offset + 1, 1) = chr(bytes(i))
         DoEvents
     Next i
     BytesToString = tempStr
@@ -240,13 +253,18 @@ End Function
 
 
 ' Helper to add a UTF-8 BOM to beginning of a Byte() array
-Function AddUtf8BOM(ByRef bytes() As Byte) As Byte()
+Function addUtf8BOM(ByRef bytes() As Byte) As Byte()
     Dim ucBytes() As Byte
     ReDim ucBytes(0 To UBound(bytes) + 3) ' +3 for UTF-8 BOM
     ' UTF-8 BOM  239, 187 and 191 in decimal (357, 273, 277 in octal and EF, BB, BF hexadecimal).
     ucBytes(0) = 239: ucBytes(1) = 187: ucBytes(2) = 191
     CopyBytes bytes, ucBytes, 0, 3
-    AddUtf8BOM = ucBytes
+    addUtf8BOM = ucBytes
+End Function
+' returns True if Byte() array begins with UTF-8 BOM
+Function HasUtf8BOM(ByRef bytes() As Byte, Optional ByVal offset As Long = 0) As Boolean
+    If ByteArraySize(bytes) < (offset + 3) Then Exit Function
+    HasUtf8BOM = (bytes(offset) = 239) And (bytes(offset + 1) = 187) And (bytes(offset + 2) = 191)
 End Function
     
 ''' Return byte array with VBA "Unicode" string encoded in UTF-8
@@ -263,7 +281,7 @@ Public Function StringToUtf8Bytes(ByRef strInput As String, Optional ByVal BOM A
     ' We don't want the terminating null in our byte array, so ask for `nBytes-1` bytes
     ReDim abBuffer(nBytes - 2)  ' NB ReDim with one less byte than you need (0 to (nBytes-1)-1)
     nBytes = WideCharToMultiByte(CodePages.CP_UTF8, 0&, ByVal StrPtr(strInput), -1, ByVal VarPtr(abBuffer(0)), nBytes - 1, 0&, 0&)
-    If BOM Then abBuffer = AddUtf8BOM(abBuffer)
+    If BOM Then abBuffer = addUtf8BOM(abBuffer)
     StringToUtf8Bytes = abBuffer
 End Function
 

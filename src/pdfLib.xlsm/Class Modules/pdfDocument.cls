@@ -34,6 +34,16 @@ Private m_Meta As pdfValue
 ' use pages.referenceObj where any /Parent or other indirect reference object is needed
 Private m_Pages As pdfValue
 
+' optional named /Dest[ination]s
+' this does not refer to an obj in the PDF but to a Dictionary key'd by /Dests in the /Root document catalog
+' each key in the dictionary is the destination Name, and the value is either an array or dictionary with /D key having the array
+' the array is a Destination, see PDF spec for all variations
+Private m_Dests As pdfValue
+
+' optional named /Outlines
+Private m_Outlines As pdfValue
+
+
 ' cache of loaded/shared objects
 Public objectCache As Dictionary ' of pdfValue key'd by object id
 
@@ -68,6 +78,18 @@ Public Enum PDF_VERSIONS
     PDF_2_0 = 20
     PDF_Default = PDF_1_7
 End Enum
+
+Public Enum PDF_FIT
+    PDF_XYZ = -1
+    PDF_FIT = 0
+    PDF_FITH
+    PDF_FITV
+    PDF_FITR
+    PDF_FITB
+    PDF_FITBH
+    PDF_FITBV
+End Enum
+
 
 ' version in PDF
 ' generally one of: %PDF 1.0 %PDF 1.1 %PDF 1.2 %PDF 1.3 %PDF 1.4 %PDF 1.5 %PDF 1.6 %PDF 1.7 %PDF-2.0
@@ -181,12 +203,16 @@ End Property
 ' returns either /Title in /Info or if not found (no /Info or no /Title, filename)
 ' Note: we do not update /Meta as Meta is XML which we don't currently want to deal with
 Public Property Let Title(pdfTitle As String)
-    Stop ' TODO update/add /Info
+    If IsBlank(pdfTitle) Then
+        If Info.hasKey("/Title") Then Info.asDictionary().Remove ("/Title")
+    Else
+        Info.asDictionary.item("/Title") = pdfTitle
+    End If
 End Property
 Public Property Get Title() As String
     If IsBlank(m_Title) Then
         If Info.hasKey("/Title") Then
-            m_Title = Info.asDictionary().Item("/Title").value
+            m_Title = Info.asDictionary().item("/Title").value
         Else
             m_Title = filename
         End If
@@ -247,7 +273,7 @@ Public Property Get Meta() As pdfValue
         If Not catalogDict Is Nothing Then
             If catalogDict.Exists("/Metadata") Then
                 Dim pdfRefObj As pdfValue
-                Set pdfRefObj = catalogDict.Item("/Metadata")
+                Set pdfRefObj = catalogDict.item("/Metadata")
                 ' 1st try loading cached object, if that fails, try loading from raw content()
                 Set m_Meta = getObject(CLng(pdfRefObj.value), pdfRefObj.generation, cacheObject:=False)
                 Debug.Print BytesToString(m_Meta.serialize())
@@ -263,45 +289,74 @@ Public Property Get Meta() As pdfValue
 End Property
 
 
-' get/set Pages object
-Public Property Set pages(ByRef pages As pdfValue)
-    Set m_Pages = pages
-End Property
-Public Property Get pages() As pdfValue
+' stores a cached copy of [optional] obj from /Root document catalog
+' Note: assumes rootCatalog already established (loaded from file or otherwise Set)
+Private Function objFromDocCatalog(ByRef m_obj As pdfValue, ByRef keyName As String, Optional ByVal isOptional As Boolean = True) As pdfValue
     On Error GoTo errHandler
-    If m_Pages Is Nothing Then Set m_Pages = New pdfValue
-    If m_Pages.valueType = PDF_ValueType.PDF_Null Then
+    If m_obj Is Nothing Then Set m_obj = New pdfValue
+    If m_obj.valueType = PDF_ValueType.PDF_Null Then
         ' find /Pages reference in /Root catalog and returns corresponding object from pdf or objectCache Dictionary
-        If rootCatalog.hasKey("/Pages") Then ' /Pages in the catalog dictionary << >>
+        If rootCatalog.hasKey(keyName) Then ' /key in the catalog dictionary << >>
             Dim obj As pdfValue
-            Set obj = rootCatalog.asDictionary.Item("/Pages")
+            Set obj = rootCatalog.asDictionary.item(keyName)
             ' obj should now be a reference to our /Pages object
             If obj.valueType = PDF_ValueType.PDF_Reference Then
                 ' retrieve object (not reference) matching given obj reference's (id, generation) pair
-                Set m_Pages = getObject(CLng(obj.value), obj.generation)
-            ElseIf obj.valueType = PDF_ValueType.PDF_Object Then
-                ' ok, weird but whatever
-                Set m_Pages = obj
+                Set m_obj = getObject(CLng(obj.value), obj.generation)
             Else
-                ' error! didn't find what we expected here
+                ' just return whatever we found
+                ' if this is /Pages then probably an error as it should be a reference, but others may
+                ' be a dictionary of values
+                Set m_obj = obj
+            End If
+        Else
+            If Not isOptional Then
+                Debug.Print "PDF missing required " & keyName & " from /Root document catalog!"
                 Stop
             End If
         End If
     End If
-    Set pages = m_Pages
-    Exit Property
+    Set objFromDocCatalog = m_obj
+    Exit Function
 errHandler:
     Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
     Stop
     Resume
+End Function
+
+
+' get/set Pages object
+Public Property Set Pages(ByRef Pages As pdfValue)
+    Set m_Pages = Pages
+End Property
+Public Property Get Pages() As pdfValue
+    Set Pages = objFromDocCatalog(m_Pages, "/Pages", isOptional:=False) ' should return a PDF_ValueType=PDF_Object
+End Property
+
+
+' get/set optional named /Dest[ination]s
+Public Property Set Dests(ByRef Dests As pdfValue)
+    Set m_Dests = Dests
+End Property
+Public Property Get Dests() As pdfValue
+    Set Dests = objFromDocCatalog(m_Dests, "/Dests") ' should return a PDF_ValueType=PDF_Dictionary
+End Property
+
+
+' get/set optional named /Outlines
+Public Property Set Outlines(ByRef Outlines As pdfValue)
+    Set m_Outlines = Outlines
+End Property
+Public Property Get Outlines() As pdfValue
+    Set Outlines = objFromDocCatalog(m_Outlines, "/Outlines")
 End Property
 
 
 ' returns /Count from /Pages (total /Page objects in pdf)
 ' readonly - add/remove /Page objects and update /Pages tree to alter value
 Public Property Get pageCount() As Long
-    If pages.hasKey("/Count") Then
-        pageCount = CLng(pages.asDictionary().Item("/Count").value)
+    If Pages.hasKey("/Count") Then
+        pageCount = CLng(Pages.asDictionary().item("/Count").value)
     End If
 End Property
 
@@ -315,9 +370,10 @@ Public Sub AddInfo(Optional defaults As Variant)
     
     ' add in some additional default values
     With Info.asDictionary()
-        Set .Item("/Producer") = pdfValue.NewValue("vbaPDF")
+        Set .item("/Producer") = pdfValue.NewValue("vbaPDF")
     End With
 End Sub
+
 
 ' adds & initializes the top level /Root document catalog
 ' Note: if /Root already exists in /Trailer, this will replace it with a new one, assumes trailer is valid
@@ -325,22 +381,72 @@ Public Sub NewDocumentCatalog()
     Set rootCatalog = pdfValue.NewValue(pdfValue.NewValue(New Dictionary), id:=nextObjId)
     ' add in some additional default values
     With rootCatalog.asDictionary()
-        Set .Item("/Type") = pdfValue.NewNameValue("/Catalog")
-        Set .Item("/Version") = pdfValue.NewNameValue("/" & Format(version / 10#, "#.0"))
-        Set .Item("/PageLayout") = pdfValue.NewNameValue("/OneColumn")  ' if not specified default is "/SinglePage"
-        Set .Item("/PageMode") = pdfValue.NewNameValue("/UseNone")      '  " is "/UseNone"
-        Set .Item("/Lang") = pdfValue.NewValue("en")                    '  " is unknown language
+        Set .item("/Type") = pdfValue.NewNameValue("/Catalog")
+        Set .item("/Version") = pdfValue.NewNameValue("/" & Format(version / 10#, "#.0"))
+        Set .item("/PageLayout") = pdfValue.NewNameValue("/OneColumn")  ' if not specified default is "/SinglePage"
+        Set .item("/PageMode") = pdfValue.NewNameValue("/UseNone")      '  " is "/UseNone"
+        Set .item("/Lang") = pdfValue.NewValue("en")                    '  " is unknown language
     End With
     
     updateTrailerReference "/Root", rootCatalog
 End Sub
 
+
+' creates a /typeName pdfValue dictionary object and updates /Root
+Private Function NewTopLevelDictionary(ByRef typeName As String, ByRef parent As pdfValue, Optional ByRef defaults As Dictionary = Nothing) As pdfValue
+    Dim newObj As pdfValue
+    Set newObj = pdfValue.NewValue(pdfValue.NewValue(New Dictionary), id:=nextObjId)
+    ' add in some default values
+    With newObj.asDictionary()
+        Set .item("/Type") = pdfValue.NewNameValue(typeName)
+        ' /Parent should not exist in /Root/typeName, but need to update /Root to point to our new toplevel /typeName
+        If parent Is Nothing Then
+            Set rootCatalog.asDictionary(typeName) = newObj.referenceObj
+        Else
+            If parent.valueType = PDF_ValueType.PDF_Object Then
+                Set .item("/Parent") = parent.referenceObj
+            ElseIf parent.valueType = PDF_ValueType.PDF_Reference Then
+                Set .item("/Parent") = parent ' already a reference
+            Else
+                Stop ' unsupported value!
+            End If
+        End If
+        ' additional optional defaults
+        If Not defaults Is Nothing Then
+            Dim v As Variant
+            For Each v In defaults.Keys
+                Set .item(v) = defaults(v)
+            Next
+        End If
+    End With
+    
+    ' ensure /typeName object is saved and easily retrievable
+    objectCache.Add newObj.id, newObj
+    Set NewTopLevelDictionary = newObj
+End Function
+
+
+' creates a default initialized /Pages object
+Public Function NewPages(ByRef parent As pdfValue, Optional ByRef defaults As Dictionary = Nothing) As pdfValue
+    If defaults Is Nothing Then Set defaults = New Dictionary
+    With defaults
+        Set .item("/Kids") = pdfValue.NewValue(New Collection)
+        Set .item("/Count") = pdfValue.NewValue(0)
+    End With
+    Set NewPages = NewTopLevelDictionary("/Pages", parent, defaults)
+End Function
+' creates a default initialized /Page object
+Public Function NewPage(ByRef parent As pdfValue, Optional ByRef defaults As Dictionary = Nothing) As pdfValue
+    Set NewPage = NewTopLevelDictionary("/Page", parent, defaults)
+End Function
+
 ' adds a /Page or /Pages to document
 ' if pages is Nothing then will also set top level /Root /Pages to newPages
+' Note: currently all /Page or /Pages [thePages] are added to top level /Pages, in future may balance tree better (automatically add nested /Pages)
 Public Sub AddPages(Optional ByRef thePages As pdfValue = Nothing)
-    ' ensure top level /Pages is initialized
-    If pages.valueType = PDF_ValueType.PDF_Null Then
-        Set pages = NewPages(Nothing)
+    ' ensure top level /Pages is initialized, use m_Pages as we don't want to try loading /Root/Pages if creating new pdf doc
+    If m_Pages.valueType = PDF_ValueType.PDF_Null Then
+        Set Pages = NewPages(Nothing)
     End If
     
     ' add new /Pages or /Page to our top level /Pages
@@ -348,47 +454,302 @@ Public Sub AddPages(Optional ByRef thePages As pdfValue = Nothing)
         ' first get Kids
         Dim kids As Collection
         ' add our Page(s) as a new child (as an indirect object reference)
-        Set kids = pages.asDictionary("/Kids").value
+        If Not Pages.asDictionary.Exists("/Kids") Then
+            Pages.asDictionary.Add "/Kids", pdfValue.NewValue(New Collection)
+        End If
+        Set kids = Pages.asDictionary("/Kids").value
         kids.Add thePages.referenceObj
-        Set thePages.asDictionary("/Parent") = pages.referenceObj
+        Set thePages.asDictionary("/Parent") = Pages.referenceObj
         ' update page count
-        Set pages.asDictionary("/Count") = pdfValue.NewValue(pageCount + CLng(thePages.asDictionary("/Count").value))
+        Set Pages.asDictionary("/Count") = pdfValue.NewValue(pageCount + CLng(thePages.asDictionary("/Count").value))
     End If
 End Sub
-' creates a default initialized /Page object
-Public Function NewPage(Optional defaults As Variant) As pdfValue
 
+
+' creates a default initialized named /Dests object
+Public Function NewDests(Optional defaults As Variant) As pdfValue
+    Set NewDests = pdfValue.NewValue(New Dictionary)    ' << /Name1 [page Fit] /Name2 [page Fit] >> directly in /Root /Dests << ... >>
+    Set rootCatalog.asDictionary("/Dests") = NewDests
 End Function
-' creates a default initialized /Pages object
-Public Function NewPages(ByRef Parent As pdfValue, Optional defaults As Variant) As pdfValue
-    Set NewPages = pdfValue.NewValue(pdfValue.NewValue(New Dictionary), id:=nextObjId)
-    ' add in some additional default values
-    With NewPages.asDictionary()
-        Set .Item("/Type") = pdfValue.NewNameValue("/Pages")
-        ' /Parent should not exist in /Root/Pages, but need to update /Root to point to our new toplevel /Pages
-        If Parent Is Nothing Then
-            Set rootCatalog.asDictionary("/Pages") = NewPages.referenceObj
+
+' adds a /Dests dictionary to document catalog if needed
+' then will add an entry with key destName and value theDest to the /Dests dictionary
+' theDest should be a Destination, see NewDestination(...)
+' destName should be a pdfValue of type PDF_Name
+Public Sub AddNamedDestinations(ByRef destName As pdfValue, ByRef theDest As pdfValue)
+    ' ensure top level /Dests is initialized
+    If Dests.valueType = PDF_ValueType.PDF_Null Then
+        Set Dests = NewDests
+    End If
+    
+    ' add new Explicit Destination as Named value to our top level /Dests
+    If Not ((theDest Is Nothing) Or IsBlank(destName.value)) Then
+        Dim dict As Dictionary
+        Set dict = Dests.asDictionary()
+        If Not dict Is Nothing Then
+            ' Note: the name for the destination is recommended to be a PDF_Name, but could just be a PDF_String
+            Set dict(destName) = theDest
         Else
-            If Parent.valueType = PDF_ValueType.PDF_Object Then
-                Set .Item("/Parent") = Parent.referenceObj
-            ElseIf Parent.valueType = PDF_ValueType.PDF_Reference Then
-                Set .Item("/Parent") = Parent ' already a reference
+            Stop ' internal error or unexpected value, should have been a valid VBA Dictionary object
+        End If
+    End If
+End Sub
+
+' given an object that represents a Destination, parse into subparts (or given parts return new Destination object)
+' if dest is a reference will attempt to Get the Object
+' otherwise dest should be an array [page fit ...] or a dictionary with a "/D" key containing the array
+' if it is a dictionary, the Dictionary object is returned in extra for any associated values (otherwise extra is Nothing)
+' depending on fit, the other values will be corresponding values provided or -1 to indicated not provided / not applicable
+Public Sub parseDestination(ByRef dest As pdfValue, ByRef page As Long, ByRef fit As PDF_FIT, ByRef leftX As Variant, ByRef rightX As Variant, ByRef topY As Variant, ByRef bottomY As Variant, ByRef zoom As Variant, ByRef extra As Dictionary)
+    On Error GoTo errHandler
+    page = 0: fit = PDF_FIT.PDF_FIT: leftX = Null: rightX = Null: topY = Null: bottomY = Null: zoom = 0: Set extra = Nothing
+    
+    Dim destArray As Collection
+    If dest.valueType = PDF_ValueType.PDF_Array Then
+        Set destArray = dest.value
+    ElseIf dest.hasKey("/D") Then
+        Set extra = dest.asDictionary()
+        Set destArray = dest.asDictionary().item("/D").value
+    End If
+    
+    page = CLng(destArray(0).value)
+    Select Case TrimWS(destArray(1).value)
+        Case "/XYZ"
+            fit = PDF_FIT.PDF_XYZ
+            leftX = CLng(destArray(2).value)
+            topY = CLng(destArray(3).value)
+            zoom = CLng(destArray(4).value)
+        Case "/Fit"
+            fit = PDF_FIT.PDF_FIT
+        Case "/FitH"
+            fit = PDF_FIT.PDF_FITH
+            topY = CLng(destArray(2).value)
+        Case "/FitV"
+            fit = PDF_FIT.PDF_FITV
+            leftX = CLng(destArray(2).value)
+        Case "/FitR"
+            fit = PDF_FIT.PDF_FITR
+            leftX = CLng(destArray(2).value)
+            bottomY = CLng(destArray(3).value)
+            rightX = CLng(destArray(4).value)
+            topY = CLng(destArray(5).value)
+        Case "/FitB"
+            fit = PDF_FIT.PDF_FITB
+        Case "/FitBH"
+            fit = PDF_FIT.PDF_FITBH
+            topY = CLng(destArray(2).value)
+        Case "/FitBV"
+            fit = PDF_FIT.PDF_FITBV
+            leftX = CLng(destArray(2).value)
+        Case Else
+            Stop ' unknown option
+    End Select
+    
+    Exit Sub
+errHandler:
+    Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
+    Stop
+    Resume
+End Sub
+Public Function NewDestination(ByRef page As Long, Optional ByRef fit As PDF_FIT = PDF_FIT.PDF_FIT, Optional ByRef leftX As Variant = Null, Optional ByRef rightX As Variant = Null, Optional ByRef topY As Variant = Null, Optional ByRef bottomY As Variant = Null, Optional ByRef zoom As Variant = Null, Optional ByRef extra As Dictionary = Nothing) As pdfValue
+    On Error GoTo errHandler
+    Dim dest As pdfValue
+    Dim destArray As Collection: Set destArray = New Collection
+    If extra Is Nothing Then
+        Set dest = pdfValue.NewValue(destArray)
+    Else
+        Set extra.item("/D") = pdfValue.NewValue(destArray)
+        Set dest = pdfValue.NewValue(extra)
+    End If
+    
+    destArray.Add pdfValue.NewValue(page)
+    Select Case fit
+        Case PDF_FIT.PDF_XYZ
+            destArray.Add pdfValue.NewNameValue("/XYZ")
+            destArray.Add pdfValue.NewValue(leftX)
+            destArray.Add pdfValue.NewValue(topY)
+            destArray.Add pdfValue.NewValue(zoom)
+        Case PDF_FIT.PDF_FIT
+            destArray.Add pdfValue.NewNameValue("/Fit")
+        Case PDF_FIT.PDF_FITH
+            destArray.Add pdfValue.NewNameValue("/FitH")
+            destArray.Add pdfValue.NewValue(topY)
+        Case PDF_FIT.PDF_FITV
+            destArray.Add pdfValue.NewNameValue("/FitV")
+            destArray.Add pdfValue.NewValue(leftX)
+        Case PDF_FIT.PDF_FITR
+            destArray.Add pdfValue.NewNameValue("/FitR")
+            destArray.Add pdfValue.NewValue(leftX)
+            destArray.Add pdfValue.NewValue(bottomY)
+            destArray.Add pdfValue.NewValue(rightX)
+            destArray.Add pdfValue.NewValue(topY)
+        Case "FITB"
+            destArray.Add pdfValue.NewNameValue("/FitB")
+        Case PDF_FIT.PDF_FITBH
+            destArray.Add pdfValue.NewNameValue("/FitBH")
+            destArray.Add pdfValue.NewValue(topY)
+        Case PDF_FIT.PDF_FITBV
+            destArray.Add pdfValue.NewNameValue("/FitBV")
+            destArray.Add pdfValue.NewValue(leftX)
+        Case Else
+            Stop ' unknown option
+    End Select
+    
+    Set NewDestination = dest
+    Exit Function
+errHandler:
+    Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
+    Stop
+    Resume
+End Function
+
+
+' creates a default initialized /Outlines object
+' defaults should include /First /Last and /Count
+Public Function NewOutlines(ByRef parent As pdfValue, Optional ByRef defaults As Dictionary = Nothing) As pdfValue
+    If defaults Is Nothing Then Set defaults = New Dictionary
+    With defaults
+        'If Not .Exists("/First") Then Set .item("/First") = pdfValue.NewValue(Null)
+        'If Not .Exists("/Last") Then Set .item("/Last") = pdfValue.NewValue(Null)
+        If Not .Exists("/Count") Then Set .item("/Count") = pdfValue.NewValue(0)
+    End With
+    Set NewOutlines = NewTopLevelDictionary("/Outlines", parent, defaults)
+End Function
+
+' adds a /Outlines to document, specifies top level /Outline item(s)
+' if Outlines is Nothing then will also set top level /Root /Outlines to newOutlines
+' IF OutlineItem does not have its /Next and /Prev values set already then adds to end of list
+' we update it's /Parent and if needed /First and /Last of /Outline
+' OutlineItem's /Count is added to Outline's /Count
+Public Sub AddOutlines(Optional ByRef anOutlineItem As pdfValue = Nothing)
+    ' ensure top level dictionary is initialized
+    If Outlines.valueType = PDF_ValueType.PDF_Null Then
+        Set Outlines = NewOutlines(Nothing)
+    End If
+    
+    ' insert a new /OutlineItem into our outlines
+    If Not anOutlineItem Is Nothing Then
+        ' determine if /First and /Last exists or need to be created
+        ' determine if this item is being appended to end or has picked its place
+        Dim first As pdfValue, last As pdfValue, prevItem As pdfValue, nextItem As pdfValue
+        With Outlines.asDictionary()
+            If .Exists("/First") Then
+                Set first = .item("/First")
             Else
-                Stop ' unsupported value!
+                Set first = pdfValue.NewValue(Null)
+            End If
+            If .Exists("/Last") Then
+                Set last = .item("/Last")
+            Else
+                Set last = pdfValue.NewValue(Null)
+            End If
+            
+            If anOutlineItem.asDictionary().Exists("/Prev") Then
+                Set prevItem = anOutlineItem.asDictionary().item("/Prev")
+            Else
+                Set prevItem = pdfValue.NewValue(Null)
+            End If
+            If anOutlineItem.asDictionary().Exists("/Next") Then
+                Set nextItem = anOutlineItem.asDictionary().item("/Next")
+            Else
+                Set nextItem = pdfValue.NewValue(Null)
+            End If
+            
+            If (first.valueType = PDF_ValueType.PDF_Null) Then
+                If (prevItem.valueType = PDF_ValueType.PDF_Null) Then
+                    Set .item("/First") = anOutlineItem.referenceObj
+                Else
+                    Set .item("/First") = GetEndOfChain(prevItem, "/Prev")   ' returns referenceObj
+                End If
+            Else
+                If (prevItem.valueType = PDF_ValueType.PDF_Null) And (last.valueType <> PDF_ValueType.PDF_Null) Then
+                    Set anOutlineItem.asDictionary().item("/Prev") = last
+                    Dim obj As pdfValue
+                    Set obj = getObject(last.value, last.generation)
+                    Set obj.asDictionary().item("/Next") = anOutlineItem.referenceObj
+                    Set .item("/Last") = anOutlineItem.referenceObj
+                'Else leave /Prev whatever it is
+                End If
+            End If
+            If (last.valueType = PDF_ValueType.PDF_Null) Then
+                If (nextItem.valueType = PDF_ValueType.PDF_Null) Then
+                    Set .item("/Last") = anOutlineItem.referenceObj
+                Else
+                    Set .item("/Last") = GetEndOfChain(nextItem, "/Next")    ' returns referenceObj
+                End If
+            Else
+                If (nextItem.valueType = PDF_ValueType.PDF_Null) And (first.valueType <> PDF_ValueType.PDF_Null) Then
+                    'Set anOutlineItem.asDictionary().item("/Next") = first
+                'Else leave /Next as is
+                End If
+            End If
+            
+            Dim count As Long
+            Dim countValue As pdfValue
+            If anOutlineItem.hasKey("/Count") Then
+                count = anOutlineItem.asDictionary().item("/Count").value
+            Else
+                count = 1
+            End If
+            If .Exists("/Count") Then
+                count = count + .item("/Count").value
+            End If
+            Set .item("/Count") = pdfValue.NewValue(count)
+        End With
+    End If
+End Sub
+
+' follows a linked list and returns pdfValue at end
+' item can be obj or obj reference, returns obj reference
+Private Function GetEndOfChain(ByRef item As pdfValue, ByRef linkName As String) As pdfValue
+    Dim nullValue As pdfValue: Set nullValue = pdfValue.NewValue(Null)
+    Dim obj As pdfValue
+    Dim nextItem As pdfValue: Set nextItem = item
+    If nextItem Is Nothing Then Set nextItem = nullValue
+    ' we expect item and nextItem to object references, but we need actual obj to follow linked list
+    If nextItem.valueType = PDF_ValueType.PDF_Reference Then Set obj = getObject(nextItem.value, nextItem.generation)
+    Set GetEndOfChain = nextItem.referenceObj
+    Do While nextItem.valueType = PDF_ValueType.PDF_Dictionary
+        Dim dict As Dictionary: Set dict = nextItem.asDictionary()
+        Set nextItem = nullValue
+        If dict.Exists(linkName) Then
+            Set nextItem = dict.item(linkName)
+            If nextItem.valueType = PDF_ValueType.PDF_Reference Then Set obj = getObject(nextItem.value, nextItem.generation)
+            If nextItem.valueType = PDF_ValueType.PDF_Dictionary Then
+                Set GetEndOfChain = nextItem.referenceObj
             End If
         End If
-        Set .Item("/Kids") = pdfValue.NewValue(New Collection)
-        Set .Item("/Count") = pdfValue.NewValue(0)
-    End With
-    
-    ' ensure /Pages object is saved and easily retrievable
-    objectCache.Add NewPages.id, NewPages
+    Loop
 End Function
 
-' TODO
-Public Sub AddOutlines()
 
+' creates a default initialized /Outline item object
+' defaults should include /First /Last along with /Count, /Title /Prev /Next and optionally /Dest
+Public Function NewOutlineItem(ByRef parent As pdfValue, Optional ByRef defaults As Dictionary) As pdfValue
+    If defaults Is Nothing Then Set defaults = New Dictionary
+    With defaults
+        'If Not .Exists("/Next") Then Set .Item("/Next") = pdfValue.NewValue(Null)
+        'If Not .Exists("/Prev") Then Set .Item("/Prev") = pdfValue.NewValue(Null)
+        'If Not .Exists("/Count") Then Set .item("/Count") = pdfValue.NewValue(1)
+    End With
+    ' Note: /Type /OutlineItem doesn't exist in spec, but should be safe as no /Type specified & additional entries allowed
+    Set NewOutlineItem = NewTopLevelDictionary("/OutlineItem", parent, defaults)
+End Function
+
+' adds a /Outlines to document, specifies top level /Outline item(s)
+' if Outlines is Nothing then will also set top level /Root /Outlines to newOutlines
+Public Sub AddOutlineItem(ByRef parent As pdfValue, Optional ByRef anOutlineItem As pdfValue = Nothing)
+    ' ensure top level dictionary is initialized
+    If Outlines.valueType = PDF_ValueType.PDF_Null Then
+        Set Outlines = NewOutlines(Nothing)
+    End If
+    
+    ' insert a new /OutlineItem into our outlines
+    If Not anOutlineItem Is Nothing Then
+        ' create /First and /Last if needed, otherwise update /Last and /Count and /Next & /Prev
+    End If
 End Sub
+
 
 
 ' updates id of all objects under root pdfValue beginning at baseId
@@ -512,9 +873,9 @@ Public Function getObject(ByVal id As Long, ByVal generation As Long, Optional B
                 Dim dict As Dictionary
                 Dim curObj As pdfValue
                 Dim v As Variant
-                Set v = objectCache.Item(id)
-                If TypeName(v) = "pdfValue" Then
-                    Set curObj = objectCache.Item(id)
+                Set v = objectCache.item(id)
+                If typeName(v) = "pdfValue" Then
+                    Set curObj = objectCache.item(id)
                     If curObj.generation <> generation Then
                         Set dict = New Dictionary
                         dict.Add curObj.generation, curObj
@@ -526,7 +887,7 @@ Public Function getObject(ByVal id As Long, ByVal generation As Long, Optional B
                         Stop
                     End If
                     Set curObj = Nothing
-                ElseIf TypeName(v) = "Dictionary" Then
+                ElseIf typeName(v) = "Dictionary" Then
                     ' assume may contain multiple generations, key'd by generation
                     Set dict = v
                     If dict.Exists(generation) Then
@@ -556,14 +917,14 @@ Public Function getCachedObject(ByVal id As Long, ByVal generation As Long) As p
     Dim v As Variant
     ' return object, but verify matches expected generation
     If objectCache.Exists(id) Then
-        Set v = objectCache.Item(id)
-        If TypeName(v) = "pdfValue" Then
+        Set v = objectCache.item(id)
+        If typeName(v) = "pdfValue" Then
             Set getCachedObject = v
             If getCachedObject.generation = generation Then Exit Function
-        ElseIf TypeName(v) = "Dictionary" Then
+        ElseIf typeName(v) = "Dictionary" Then
             ' assume may contain multiple generations, key'd by generation
             If v.Exists(generation) Then
-                Set getCachedObject = v.Item(generation)
+                Set getCachedObject = v.item(generation)
                 Exit Function
             End If
         Else
@@ -754,7 +1115,7 @@ Sub SavePdfObject(ByRef outputFileNum As Integer, ByRef obj As pdfValue, _
         ' see if its a stream object stream (any other object stream  written out asis)
         If obj.asDictionary.Exists("/Type") Then
             Dim pdfNameValue As pdfValue
-            Set pdfNameValue = obj.asDictionary.Item("/Type")
+            Set pdfNameValue = obj.asDictionary.item("/Type")
             If IsMatch(pdfNameValue.value, "/ObjStm") Then Exit Sub
         End If
     End If
@@ -820,7 +1181,7 @@ Sub SavePdfTrailer(ByRef outputFileNum As Integer, _
     Dim v As Variant
     Dim entry As xrefEntry
     Dim maxId As Long
-    maxId = xrefTable.Count - 1 ' should be at least this high
+    maxId = xrefTable.count - 1 ' should be at least this high
     For Each v In xrefTable.Items
         Set entry = v
         If entry.id > maxId Then maxId = entry.id
@@ -831,7 +1192,7 @@ Sub SavePdfTrailer(ByRef outputFileNum As Integer, _
     Dim ndx As Long
     For ndx = 0 To maxId ' Note we need to check actual id values for highest value and not just use xrefTable.count - 1
         If xrefTable.Exists(ndx) Then
-            Set entry = xrefTable.Item(ndx)
+            Set entry = xrefTable.item(ndx)
             If entry.isFree Then
                 PutString outputFileNum, Format(entry.nextFreeId, "0000000000") & " " & Format(entry.generation, "00000") & " f" & vbNewLine
             Else
@@ -903,12 +1264,12 @@ Sub AddUpdateXref(ByRef obj As pdfValue, ByVal offset As Long, Optional ByVal ba
     Dim id As Long
     id = baseId + obj.id
     If xrefTable.Exists(id) Then
-        If IsEmpty(xrefTable.Item(id)) Then
+        If IsEmpty(xrefTable.item(id)) Then
             Stop
             GoTo newEntry
         End If
         ' update existing entry
-        Set entry = xrefTable.Item(id)
+        Set entry = xrefTable.item(id)
         entry.offset = offset
     Else
 newEntry:
@@ -941,6 +1302,7 @@ Private Sub Class_Initialize()
     NewDocumentCatalog
     Set Info = New pdfValue ' default is null
     Set Meta = New pdfValue ' default is null
+    Set Pages = New pdfValue ' default is null
     Exit Sub
 errHandler:
     Debug.Print Err.Description
@@ -958,6 +1320,7 @@ Private Sub Class_Terminate()
     Set trailer = Nothing
     Set m_Info = Nothing    ' don't set Info as we don't want to update trailer
     Set Meta = Nothing
+    Set Pages = Nothing
     Erase content
     Exit Sub
 errHandler:
@@ -998,7 +1361,7 @@ Private Function GetValueType(ByRef bytes() As Byte, ByVal offset As Long) As PD
     
     offset = SkipWhiteSpace(bytes, offset)
     If offset > UBound(bytes) Then Exit Function    ' return null type if end of data
-    Dim token As String: token = Chr(bytes(offset))
+    Dim token As String: token = chr(bytes(offset))
     
     Dim tmpStr As String
     Select Case LCase(token)
@@ -1048,7 +1411,7 @@ Private Function GetValueType(ByRef bytes() As Byte, ByVal offset As Long) As PD
         Case "]"
             GetValueType = PDF_ValueType.PDF_EndOfArray
         Case "<"
-            If IsMatch("<", Chr(bytes(offset + 1))) Then
+            If IsMatch("<", chr(bytes(offset + 1))) Then
                 GetValueType = PDF_ValueType.PDF_Dictionary ' <<...>>
             Else
                 GetValueType = PDF_ValueType.PDF_String ' hex string <####>
@@ -1084,19 +1447,62 @@ End Function
 
 
 ' a Name may have value encoded in #00 form, ie # followed by 2 hex digits
-Private Function ProcessName(ByRef name As String) As String
-    Dim ndx As Long
-    ndx = InStr(1, name, "#", vbBinaryCompare)
-    If ndx > 0 Then
-        Dim s As String, n As Long
-        ProcessName = Left(name, ndx - 1)
-        s = Mid(name, ndx + 1, 2) ' get hex digits
-        n = CLng("&H" & s) ' convert from hex to Long
-        s = ProcessName & Chr(n) & Mid(name, ndx + 3) ' combine with hex digit as character
-        ProcessName = ProcessName(s) ' for now just recursively call to handle multiple encoded values, really should be a loop!
+Public Function ProcessName(ByRef name() As Byte) As String
+    Dim buffer() As Byte
+    ReDim buffer(0 To UBound(name))
+    Dim nameNdx As Long, bufNdx As Long, val As Long
+    For nameNdx = LBound(name) To UBound(name)
+        val = name(nameNdx)
+        If val = 35 Then ' #
+            Dim s As String
+            s = "&H" & chr(name(nameNdx + 1)) & chr(name(nameNdx + 2))  ' #00 --> &H00
+            nameNdx = nameNdx + 2 ' skip past 00 also
+            buffer(bufNdx) = CLng(s)
+        Else
+            buffer(bufNdx) = val
+        End If
+        bufNdx = bufNdx + 1
+    Next nameNdx
+    ReDim Preserve buffer(0 To bufNdx - 1) ' shrink to size (or no change if no #00 encoded values)
+    ' if UTF8 then convert to VBA Unicode String, note / is not considered part of Name so skip past it looking for BOM
+    If HasUtf8BOM(buffer, 1) Then
+        ProcessName = "/" & Mid(Utf8BytesToString(buffer), 3) ' skip past BOM [/ BOM Name]
     Else
-        ProcessName = name
+        ProcessName = BytesToString(buffer)
     End If
+End Function
+' opposite of ProcessName, converts spaces and other weird characters in #00 form
+' UTF8BOM should only be added for custom names, all standard names are ASCII and should not include BOM
+Public Function EscapeName(ByRef name As String, Optional ByVal addUtf8BOM As Boolean = False) As String
+    Dim ndx As Long, chrA As Long
+    Dim c As String
+    Dim s As String
+    If Left(name, 1) = "/" Then  ' / is not part of the Name, but we must ensure it is the start of it
+        s = Mid(name, 2) ' skip /
+    Else
+        s = name
+    End If
+    ' copy over each character, but ensuring control codes <=32 & non ASCII >= 128 are encoded as hex digits
+#If True Then
+    ' we assume a String in VBA is a Unicode String so convert name to UTF8 bytes
+    Dim utf8Name() As Byte: utf8Name = StringToUtf8Bytes(s, BOM:=addUtf8BOM)
+    For ndx = LBound(utf8Name) To UBound(utf8Name)
+        chrA = utf8Name(ndx)
+        c = chr(chrA)
+#Else
+    ' assume string is ASCII
+    Dim strLen As Long: strLen = Len(name)
+    For ndx = 1 To strLen
+        c = Mid(name, ndx, 1)
+        chrA = Asc(chr)
+#End If
+        If (chrA <= 32) Or (chrA >= 127) Then  ' from spec < Asc("!") or > Asc("~") need encoding
+            EscapeName = EscapeName + "#" + Hex(chrA \ 16) + Hex(chrA Mod 16)
+        Else
+            EscapeName = EscapeName + c
+        End If
+    Next
+    EscapeName = "/" & EscapeName
 End Function
 
 
@@ -1117,7 +1523,7 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional ByRef Me
     
     offset = SkipWhiteSpace(bytes, offset)
     If offset > UBound(bytes) Then Exit Function    ' return null type if end of data
-    Dim token As String: token = Chr(bytes(offset))
+    Dim token As String: token = chr(bytes(offset))
     
     Dim tmpStr As String
     Dim name As pdfValue, value As pdfValue
@@ -1128,7 +1534,10 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional ByRef Me
                 Stop ' error, expecting "null"
             End If
         Case PDF_ValueType.PDF_Name
-            result.value = ProcessName(GetWord(bytes, offset))
+            Dim word() As Byte
+            Dim count As Long
+            GetAsBytes bytes, offset, word, count
+            result.value = ProcessName(word)
         Case PDF_ValueType.PDF_Boolean
             tmpStr = GetWord(bytes, offset)
             result.value = CBool(tmpStr)
@@ -1216,14 +1625,14 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional ByRef Me
                                 strLen = strLen + 1
                                 openParenthesis = openParenthesis + 1
                             Case 48 To 57 ' Asc("0") To Asc("9")    ' octal
-                                Dim octStr As String: octStr = Chr(bytes(offset))
+                                Dim octStr As String: octStr = chr(bytes(offset))
                                 Dim octVal As Long: octVal = 0
                                 Dim maxOctStrLen As Integer: maxOctStrLen = 3
                                 Do While (octStr >= "0") And (octStr <= "9") And (maxOctStrLen > 0)
                                     maxOctStrLen = maxOctStrLen - 1 ' only 1 to 3 octal digits
                                     octVal = (octVal * 8) + CLng(octStr)
                                     offset = offset + 1
-                                    octStr = Chr(bytes(offset))
+                                    octStr = chr(bytes(offset))
                                 Loop
                                 offset = offset - 1 ' so we don't skip a character
                                 strBuffer(strLen) = octVal
@@ -1246,11 +1655,11 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional ByRef Me
                     ' get 2 hex digits, ignoring whitespace, may end with odd # of hex digits
                     offset = SkipWhiteSpace(bytes, offset)
                     Dim HexStr As String
-                    HexStr = Chr(bytes(offset))
+                    HexStr = chr(bytes(offset))
                     offset = offset + 1
                     offset = SkipWhiteSpace(bytes, offset)
                     If bytes(offset) <> 62 Then ' Asc(">")
-                        HexStr = HexStr & Chr(bytes(offset))
+                        HexStr = HexStr & chr(bytes(offset))
                         offset = offset + 1
                     Else
                         HexStr = HexStr & "0"
@@ -1292,7 +1701,7 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional ByRef Me
                 tmpStr = vbNullString
                 Dim ndx2 As Long
                 For ndx2 = 0 To strLen - 1
-                    tmpStr = tmpStr & Chr(strBuffer(ndx2))
+                    tmpStr = tmpStr & chr(strBuffer(ndx2))
                 Next
             End If
             result.value = tmpStr
@@ -1325,20 +1734,20 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional ByRef Me
             ' this is only the stream ... endstream portion of a PDF stream
             tmpStr = GetLine(bytes, offset) ' skip stream, note dictionary previous read in should have a /Length value (passed in as meta)
             ' skip new line, data starts immediately after and may containe additional whitespace
-            If Chr(bytes(offset)) = vbCr Then offset = offset + 1
-            If Chr(bytes(offset)) = vbLf Then offset = offset + 1
+            If chr(bytes(offset)) = vbCr Then offset = offset + 1
+            If chr(bytes(offset)) = vbLf Then offset = offset + 1
             result.valueType = PDF_ValueType.PDF_StreamData
             Dim dataBytes() As Byte
             If Meta Is Nothing Then Set Meta = New Dictionary
             If Meta.Exists("/Length") Then
                 Dim byteLen As Long
-                If IsObject(Meta.Item("/Length").value) Then
+                If IsObject(Meta.item("/Length").value) Then
                     ' Reference to actual /Length value, allowed but not common
                     Stop
                     ' TODO pass we need Dictionary of loaded objects or xrefTable to load value
                 Else
                     ' /Length directly in file as number, usual
-                    byteLen = CLng(Meta.Item("/Length").value)
+                    byteLen = CLng(Meta.item("/Length").value)
                 End If
                 ReDim dataBytes(0 To byteLen - 1)
                 CopyBytes bytes, dataBytes, offset, 0, byteLen
@@ -1353,11 +1762,11 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional ByRef Me
                     dataStr = dataStr + tmpStr
                     tmpStr = GetLine(bytes, offset)
                     ' skip past just NewLine
-                    If Chr(bytes(offset)) = vbCr Then
+                    If chr(bytes(offset)) = vbCr Then
                         tmpStr = tmpStr & vbCr
                         offset = offset + 1
                     End If
-                    If Chr(bytes(offset)) = vbLf Then
+                    If chr(bytes(offset)) = vbLf Then
                         tmpStr = tmpStr & vbLf
                         offset = offset + 1
                     End If
@@ -1517,13 +1926,13 @@ Function loadObject(ByVal Index As Long, Optional forceReload As Boolean = False
     
     If xrefTable.Exists(Index) Then
         Dim entry As xrefEntry
-        Set entry = xrefTable.Item(Index)
-        If entry.isFree Or ((Not entry.isEmbeded) And (entry.offset <= 0)) Then GoTo NullValue
+        Set entry = xrefTable.item(Index)
+        If entry.isFree Or ((Not entry.isEmbeded) And (entry.offset <= 0)) Then GoTo nullValue
         Dim offset As Long: offset = entry.offset
-        If offset > ByteArraySize(content) Then GoTo NullValue
+        If offset >= ByteArraySize(content) Then GoTo nullValue
         If entry.isEmbeded Then
             Dim cntrObjEntry As xrefEntry
-            Set cntrObjEntry = xrefTable.Item(entry.embedObjId)
+            Set cntrObjEntry = xrefTable.item(entry.embedObjId)
             Dim cntrObj As pdfValue
             ' try loading containing object (stream object stream) from cache before potentially uncompressing
             If Not sosCache Is Nothing Then
@@ -1538,7 +1947,7 @@ Function loadObject(ByVal Index As Long, Optional forceReload As Boolean = False
             If cntrObj.value.valueType <> PDF_ValueType.PDF_Stream Then
                 Debug.Print "Error! expecting stream object stream!"
                 Stop
-                GoTo NullValue
+                GoTo nullValue
             End If
             Dim streamObjectStream As pdfStream
             Set streamObjectStream = cntrObj.value.value
@@ -1558,14 +1967,14 @@ Function loadObject(ByVal Index As Long, Optional forceReload As Boolean = False
                 Dim dict As Dictionary
                 Set dict = streamObjectStream.Meta
                 If dict.Exists("/First") Then
-                    firstOffset = CLng(dict.Item("/First").value)
+                    firstOffset = CLng(dict.item("/First").value)
                 Else
                     firstOffset = -1
                 End If
                 Dim n As Long, id As Long, objOffset As Long
                 Dim v As pdfValue
                 If dict.Exists("/N") Then
-                    n = CLng(dict.Item("/N").value)
+                    n = CLng(dict.item("/N").value)
                     For i = 0 To n - 1
                         Set v = GetValue(buffer, embOffset)
                         id = v.value
@@ -1595,7 +2004,7 @@ Function loadObject(ByVal Index As Long, Optional forceReload As Boolean = False
                 ElseIf firstOffset > embOffset Then
                     Debug.Print "Warning: embedded object does not begin immediate after mini-catalog"
                 End If
-                embOffset = embXRefTable.Item(entry.id) + firstOffset
+                embOffset = embXRefTable.item(entry.id) + firstOffset
                 Set obj = New pdfValue
                 obj.id = entry.id
                 obj.valueType = PDF_ValueType.PDF_Object
@@ -1608,7 +2017,7 @@ Function loadObject(ByVal Index As Long, Optional forceReload As Boolean = False
             Set obj = GetValue(content, offset)
         End If
     Else
-NullValue:
+nullValue:
         Set obj = pdfValue.NewValue(Null)
     End If
     
@@ -1661,7 +2070,7 @@ Sub GetObjectsInTree(ByRef root As pdfValue, ByRef content() As Byte, ByRef xref
             Next v
         Case PDF_ValueType.PDF_Dictionary
             For Each k In root.value.Keys
-                Set obj = root.value.Item(k)
+                Set obj = root.value.item(k)
                 GetObjectsInTree obj, content, xrefTable, objects
             Next k
         Case PDF_ValueType.PDF_Object
@@ -1721,7 +2130,7 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
     Set ParseXrefTable = xrefTable
 
     Dim Size As Long    ' how many total entries
-    Dim Count As Long   ' how many entries in current xref chunk
+    Dim count As Long   ' how many entries in current xref chunk
     Dim id As Long      ' current catalog entry id
     Dim str As String   ' tmp string
     Dim entry As xrefEntry
@@ -1749,8 +2158,8 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
             id = CLng(str) ' staring id#
             str = GetWord(content, offset)
             offset = SkipWhiteSpace(content, offset)
-            Count = CLng(str)
-            Dim entryCount As Long: entryCount = Count ' # of entries in this section
+            count = CLng(str)
+            Dim entryCount As Long: entryCount = count ' # of entries in this section
             Do While entryCount > 0
                 Set entry = New xrefEntry
                 entry.id = id
@@ -1791,7 +2200,7 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
                 entryCount = entryCount - 1
                 DoEvents
             Loop
-            Size = Size - Count
+            Size = Size - count
             DoEvents
         Loop
     
@@ -1807,7 +2216,7 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
         Set objStream = xrefStream.value.value
         If Not objStream.Meta.Exists("/Type") Then Exit Function
         Dim obj As pdfValue
-        Set obj = objStream.Meta.Item("/Type")
+        Set obj = objStream.Meta.item("/Type")
         If obj.valueType <> PDF_ValueType.PDF_Name Then Exit Function
         If Not IsMatch(obj.value, "/XRef") Then Exit Function
         
@@ -1821,7 +2230,7 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
         ' see how many entries in this xref stream
         Dim subSections As Collection
         If objStream.Meta.Exists("/Index") Then
-            Set subSections = objStream.Meta.Item("/Index").value
+            Set subSections = objStream.Meta.item("/Index").value
         Else ' use defaults
             Set subSections = New Collection
             subSections.Add pdfValue.NewValue(0)
@@ -1832,10 +2241,10 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
         If Not objStream.Meta.Exists("/W") Then Exit Function
         Dim widths(0 To 2) As Long
         Dim w As pdfValue
-        Set w = objStream.Meta.Item("/W")
-        widths(0) = CLng(w.value.Item(1).value)
-        widths(1) = CLng(w.value.Item(2).value)
-        widths(2) = CLng(w.value.Item(3).value)
+        Set w = objStream.Meta.item("/W")
+        widths(0) = CLng(w.value.item(1).value)
+        widths(1) = CLng(w.value.item(2).value)
+        widths(2) = CLng(w.value.item(3).value)
         Set w = Nothing
         
         ' we need the uncompressed (un-/Filter'd) data
@@ -1846,17 +2255,17 @@ Function ParseXrefTable(ByRef content() As Byte, ByRef offset As Long, ByRef tra
         objOffset = 0
         Dim ndx As Long
         Dim idObj As pdfValue
-        For ndx = 0 To subSections.Count - 1 Step 2
+        For ndx = 0 To subSections.count - 1 Step 2
             ' get starting index (default value) and count of entries
-            Set idObj = subSections.Item(ndx + 1)
+            Set idObj = subSections.item(ndx + 1)
             id = idObj.value
-            Set idObj = subSections.Item(ndx + 2)
-            Count = idObj.value
+            Set idObj = subSections.item(ndx + 2)
+            count = idObj.value
             Set idObj = Nothing
             
             ' read in object id and offset information
             Dim i As Long
-            For i = 0 To Count - 1
+            For i = 0 To count - 1
                 Dim recType As Long, field2 As Long, field3 As Long
                 recType = getInt(rawData, objOffset, widths(0), 1) ' record type, 0=free,1=basic,2=embedded in obj stream
                 field2 = getInt(rawData, objOffset, widths(1), 0)

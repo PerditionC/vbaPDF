@@ -88,7 +88,7 @@ End Function
 Function GetDictionaryValue(ByRef value As pdfValue, ByVal name As String) As pdfValue
     On Error GoTo errHandler
     If value.value.Exists(name) Then
-        Set GetDictionaryValue = value.value.Item(name)
+        Set GetDictionaryValue = value.value.item(name)
     Else
         Set GetDictionaryValue = New pdfValue   ' defaults to PDF_ValueType.PDF_Null
     End If

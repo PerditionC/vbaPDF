@@ -18,6 +18,15 @@ Public value As Variant
 ' to help maintain id across indirect references, PDF_Object provides a PDF_Reference object to be used by others
 Private m_referenceObj As pdfValue
 
+' used to help encode certain information about how to represent
+Public Enum ValueFlags
+    flgNone = 0
+    flgUtf8 = 1
+    flgBinary = 2
+End Enum
+
+Public flags As ValueFlags
+
 
 ' keep our referencObj in sync
 Public Property Let id(ByVal newId As Long)
@@ -122,7 +131,7 @@ Private Function pdfStringToBytes(ByRef str As String, Optional ByVal asHex As B
     ' we need to check if any Unicode values and if so we encode in UTF-8
     ' to avoid more expensive check if >255 value used, we simply always encode as UTF-8 unless ASCII (all values < 128)
     ucBytes = StringToUtf8Bytes(str, BOM:=False)  ' Note: if only ASCII then equivalent to UTF-8 byte array
-    If UBound(ucBytes) > strLen Then ucBytes = AddUtf8BOM(ucBytes)    ' something >128 and had to be expanded to multiple bytes
+    If UBound(ucBytes) > strLen Then ucBytes = addUtf8BOM(ucBytes)    ' something >128 and had to be expanded to multiple bytes
     
     Dim ndx As Long
     ' now determine if we are returning bytes as (string) or <## ## ##> format
@@ -186,7 +195,7 @@ Public Function serialize(Optional ByVal baseId As Long = 0) As Byte()
         Case PDF_ValueType.PDF_Null
             objStr = "null"
         Case PDF_ValueType.PDF_Name
-            objStr = value.value
+            objStr = pdfDocument.EscapeName(value.value, value.flags And flgUtf8)  ' see below where Dictionary Key Name encoded
         Case PDF_ValueType.PDF_Boolean
             If value.value Then
                 objStr = "true"
@@ -222,12 +231,12 @@ Public Function serialize(Optional ByVal baseId As Long = 0) As Byte()
                 If Not firstPass Then objStr = objStr & vbLf
                 firstPass = False
                 Dim key As String
-                If TypeName(v) = "String" Then
+                If typeName(v) = "String" Then
                     key = CStr(v)
-                Else ' assume pdfValue with valueType=PDF_Name
-                    key = CStr(v.value)
+                Else 'If typeName(v) = "pdfValue" Then ' assume pdfValue with valueType=PDF_Name
+                        key = pdfDocument.EscapeName(v.value, v.flags And flgUtf8)
                 End If
-                Set pv = dict.Item(key)
+                Set pv = dict.item(v) ' v may be pdfValue or String version of key
                 objStr = objStr & key & " "
                 objStr = objStr & BytesToString(pv.serialize(baseId))
             Next v
@@ -285,8 +294,10 @@ End Function
 ' can be used by predeclared object, e.g. pdfValue.NewValueObj("/MyName", "/Name")
 
 ' returns a name as a pdfValue /Name obj
-Function NewNameValue(ByVal name As String) As pdfValue
+Function NewNameValue(ByVal name As String, Optional ByVal utf8 As Boolean = False) As pdfValue
+    If Left$(name, 1) <> "/" Then name = "/" & name
     Set NewNameValue = NewValue(name, "/Name")
+    If utf8 Then NewNameValue.flags = flgUtf8
 End Function
 
 
@@ -307,12 +318,12 @@ Function NewValue(ByRef value As Variant, Optional ByRef valueType As String = v
     Select Case VarType(value)
         Case vbNull
             ' always return same instance for Null
-            Static NullValue As pdfValue
-            If NullValue Is Nothing Then
+            Static nullValue As pdfValue
+            If nullValue Is Nothing Then
                 obj.valueType = PDF_ValueType.PDF_Null
-                Set NullValue = obj
+                Set nullValue = obj
             Else
-                Set obj = NullValue
+                Set obj = nullValue
             End If
         Case vbLong, vbInteger
             obj.valueType = PDF_ValueType.PDF_Integer
@@ -335,7 +346,7 @@ Function NewValue(ByRef value As Variant, Optional ByRef valueType As String = v
                     obj.value = CStr(value)
             End Select
         Case vbObject
-            Select Case TypeName(value)
+            Select Case typeName(value)
                 Case "Dictionary"
                     obj.valueType = PDF_ValueType.PDF_Dictionary
                     Set obj.value = value

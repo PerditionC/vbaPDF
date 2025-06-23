@@ -51,7 +51,7 @@ Private Sub UpdateInfo()
         Dim v As Variant
         Dim obj As pdfValue
         For Each v In dict.Keys
-            lbInfo.AddItem CStr(v) & "=" & dict.Item(v).value
+            lbInfo.AddItem CStr(v) & "=" & dict.item(v).value
         Next v
     End If
 End Sub
@@ -59,6 +59,23 @@ End Sub
 Private Sub UpdatePages()
     lblPageCount = pdfDoc.pageCount
 End Sub
+
+Private Sub UpdateNamedDestinations()
+    If pdfDoc.Dests.valueType = PDF_ValueType.PDF_Dictionary Then
+        Dim dict As Dictionary: Set dict = pdfDoc.Dests.asDictionary()
+        If Not dict Is Nothing Then
+            Dim v As Variant
+            Dim obj As pdfValue
+            For Each v In dict.Keys
+                Set obj = dict(v)
+                lbNamedDestinations.AddItem CStr(v) & ":" & BytesToString(obj.serialize())
+            Next v
+            Set v = Nothing
+        End If
+        Set dict = Nothing
+    End If
+End Sub
+
 
 
 Private Sub UserForm_Activate()
@@ -75,5 +92,6 @@ Private Sub UserForm_Activate()
         lblFilename.Caption = pdfDoc.filepath & pdfDoc.filename
         UpdateInfo
         UpdatePages
+        UpdateNamedDestinations
     End If
 End Sub

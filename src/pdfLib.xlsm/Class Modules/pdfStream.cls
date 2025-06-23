@@ -23,7 +23,7 @@ Public Property Get Length() As Long
     ' Length is stored in meta
     ' it should be same as size of data
     If Meta.Exists("/Length") Then
-        Length = CLng(Meta.Item("/Length").value)
+        Length = CLng(Meta.item("/Length").value)
     End If
     
     On Error Resume Next
@@ -38,17 +38,17 @@ Public Property Get Length() As Long
 End Property
 
 ' this will add/update /Length property in meta and resize data()
-Public Property Let Length(ByVal Count As Long)
-    Meta("/Length").value = Count ' add or replace
+Public Property Let Length(ByVal count As Long)
+    Meta("/Length").value = count ' add or replace
     
     On Error Resume Next
     Dim dataLen As Long
     dataLen = UBound(data) - LBound(data)
     On Error GoTo 0
     If Err.Number = 9 Then ' array out of bounds, i.e. not initialized
-        ReDim data(0 To Count)
-    ElseIf dataLen <> Count Then ' no need to adjust size if unchanged (ie just setting meta /Length property
-        ReDim Preserve data(0 To Count) ' keep any data there, allows extending
+        ReDim data(0 To count)
+    ElseIf dataLen <> count Then ' no need to adjust size if unchanged (ie just setting meta /Length property
+        ReDim Preserve data(0 To count) ' keep any data there, allows extending
     End If
 End Property
 
@@ -66,13 +66,13 @@ Public Property Get udata() As Byte()
         If Meta.Exists("/Filter") Then
             ' TODO support all /Filter types
             Dim filter As String
-            filter = Meta.Item("/Filter").value
+            filter = Meta.item("/Filter").value
             Select Case LCase(filter)
                 Case "/flatedecode"
                     Dim startIndex As Long: startIndex = 2 ' skip past zlib wrapper to raw Deflate data
                     Dim outSize As Long ' as count of bytes -- should be 0 on entry so will be size on output
                     Dim estBufSize As Long ' if known, uncompressed size
-                    If Meta.Exists("/DL") Then estBufSize = CLng(Meta.Item("/DL").value) ' only a hint
+                    If Meta.Exists("/DL") Then estBufSize = CLng(Meta.item("/DL").value) ' only a hint
                     Erase m_udata
                     
                     ' Note: libdeflate_inflate arguments are byVal, we expect them be byRef
@@ -88,16 +88,16 @@ Public Property Get udata() As Byte()
                     predictor = 1: columns = 1
                     If Meta.Exists("/DecodeParms") Then
                         Dim pdfV As pdfValue
-                        Set pdfV = Meta.Item("/DecodeParms")
+                        Set pdfV = Meta.item("/DecodeParms")
                         Dim decodeParms As Dictionary
                         Set decodeParms = pdfV.value
                         If decodeParms.Exists("/Predictor") Then
-                            Set pdfV = decodeParms.Item("/Predictor")
+                            Set pdfV = decodeParms.item("/Predictor")
                             predictor = pdfV.value
                         End If
                         ' should only be supplied if predictor > 1, but we can load value regardless, only used if predictor > 1
                         If decodeParms.Exists("/Columns") Then
-                            Set pdfV = decodeParms.Item("/Columns")
+                            Set pdfV = decodeParms.item("/Columns")
                             columns = pdfV.value
                         End If
                         Set pdfV = Nothing

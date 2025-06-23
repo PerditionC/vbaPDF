@@ -45,7 +45,7 @@ Sub TestProblemPdfs()
         Debug.Print "Error parsing pdf " & pdfDoc.filename
     End If
     
-    Debug.Print pdfDoc.pages.asDictionary.Item("/Count").value
+    Debug.Print pdfDoc.Pages.asDictionary.item("/Count").value
     
     Dim obj As pdfValue
     Set obj = pdfDoc.getObject(69, 0)
@@ -110,7 +110,7 @@ Sub TestZip()
             Debug.Print Err.Description & " (" & Err.Number & ")"
         Else
             For i = LBound(fileContent) To UBound(fileContent)
-                Debug.Print Chr(fileContent(i));
+                Debug.Print chr(fileContent(i));
                 If fileContent(i) = 10 Then Debug.Print ""
             Next i
         End If
