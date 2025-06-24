@@ -1447,6 +1447,7 @@ End Function
 
 
 ' a Name may have value encoded in #00 form, ie # followed by 2 hex digits
+' from spec all Names should be UTF-8 encoded, so always convert from UTF-8 (BOM or not)
 Public Function ProcessName(ByRef name() As Byte) As String
     Dim buffer() As Byte
     ReDim buffer(0 To UBound(name))
@@ -1468,11 +1469,12 @@ Public Function ProcessName(ByRef name() As Byte) As String
     If HasUtf8BOM(buffer, 1) Then
         ProcessName = "/" & Mid(Utf8BytesToString(buffer), 3) ' skip past BOM [/ BOM Name]
     Else
-        ProcessName = BytesToString(buffer)
+        ProcessName = Utf8BytesToString(buffer)
     End If
 End Function
 ' opposite of ProcessName, converts spaces and other weird characters in #00 form
 ' UTF8BOM should only be added for custom names, all standard names are ASCII and should not include BOM
+' from spec all Names should be UTF-8 encoded, so no need for a BOM
 Public Function EscapeName(ByRef name As String, Optional ByVal addUtf8BOM As Boolean = False) As String
     Dim ndx As Long, chrA As Long
     Dim c As String
@@ -1483,19 +1485,11 @@ Public Function EscapeName(ByRef name As String, Optional ByVal addUtf8BOM As Bo
         s = name
     End If
     ' copy over each character, but ensuring control codes <=32 & non ASCII >= 128 are encoded as hex digits
-#If True Then
     ' we assume a String in VBA is a Unicode String so convert name to UTF8 bytes
     Dim utf8Name() As Byte: utf8Name = StringToUtf8Bytes(s, BOM:=addUtf8BOM)
     For ndx = LBound(utf8Name) To UBound(utf8Name)
         chrA = utf8Name(ndx)
         c = chr(chrA)
-#Else
-    ' assume string is ASCII
-    Dim strLen As Long: strLen = Len(name)
-    For ndx = 1 To strLen
-        c = Mid(name, ndx, 1)
-        chrA = Asc(chr)
-#End If
         If (chrA <= 32) Or (chrA >= 127) Then  ' from spec < Asc("!") or > Asc("~") need encoding
             EscapeName = EscapeName + "#" + Hex(chrA \ 16) + Hex(chrA Mod 16)
         Else
