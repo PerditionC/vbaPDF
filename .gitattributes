@@ -26,3 +26,9 @@
 
 # Portable Document Format (.pdf)
 *.[pP][dD][fF] diff=astextplain
+
+# other files/images
+*.[pP][nN][gG] binary
+*.[gG][iI][fF] binary
+*.[jJ][pP][gG] binary
+*.[sS][vV][gG] text eol=auto
