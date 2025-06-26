@@ -1,0 +1,56 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<!-- from https://pixabay.com/vectors/document-sheet-pdf-file-icon-303123/
+ see https://pixabay.com/service/license-summary/ for license, basically free to use but don't sell standalone or use illegally/deceptively
+-->
+ <defs>
+  <linearGradient id="i" x1=".30435" x2=".94203" y1=".22059" y2="1.0441">
+   <stop stop-color="#fff" offset="0"/>
+   <stop stop-color="#7ba2bf" offset="1"/>
+  </linearGradient>
+  <linearGradient id="n" x1=".021428" x2=".95" y1=".029412" y2=".97059">
+   <stop stop-color="#05264f" offset="0"/>
+   <stop stop-color="#b8c6d7" offset="1"/>
+  </linearGradient>
+  <linearGradient id="j" x1="-6e-6" y1=".5" y2=".5">
+   <stop stop-color="#f7e8ba" offset="0"/>
+   <stop stop-color="#baae86" offset=".25"/>
+   <stop stop-color="#dacb97" offset=".5"/>
+   <stop stop-color="#bfb27f" offset=".75"/>
+   <stop stop-color="#ddce8c" offset="1"/>
+  </linearGradient>
+  <linearGradient id="l" x1=".25" x2=".925" y1=".088237" y2=".38235">
+   <stop stop-color="#d2cdbc" offset="0"/>
+   <stop offset="1"/>
+  </linearGradient>
+  <linearGradient id="m" y1=".58064" y2=".58064">
+   <stop stop-color="#97a8b5" offset="0"/>
+   <stop stop-color="#e0e6ef" offset="1"/>
+  </linearGradient>
+  <linearGradient id="k" x1=".25" x2=".925" y1=".088235" y2=".38235">
+   <stop stop-color="#efe9d6" offset="0"/>
+   <stop stop-color="#b99c5c" offset="1"/>
+  </linearGradient>
+  <linearGradient id="h" x1=".025424" x2=".94915" y1=".014706" y2=".99265">
+   <stop stop-color="#9ea4ad" offset="0"/>
+   <stop stop-color="#d9e2ef" offset=".25"/>
+   <stop stop-color="#bfccdd" offset=".5"/>
+   <stop stop-color="#f0f5fa" offset="1"/>
+  </linearGradient>
+ </defs>
+ <path d="m20.719 4l-14.719 14.719v41.781c0 0.277 0.223 0.5 0.5 0.5h48c0.277 0 0.5-0.223 0.5-0.5v-56c0-0.277-0.223-0.5-0.5-0.5h-33.781z" fill="url(#h)" stroke-width=".62"/>
+ <g fill-rule="evenodd">
+  <path d="m20.546 4.5454l5.6212 18.742-19.167-4.2879 13.546-14.454z" fill="url(#n)"/>
+  <path d="m20.545 4l1.4545 15.818-16-1s3-6 6-9 8.5455-5.8182 8.5455-5.8182z" fill="url(#i)"/>
+ </g>
+ <g transform="matrix(1.0077 .50497 -.50497 1.0077 92.531 34.195)">
+  <rect x="-45.5" y="-9.5" width="6.5" height="41.5" rx=".5" ry=".5" fill="url(#j)" stroke-width=".62"/>
+  <g fill-rule="evenodd">
+   <path d="m-45.5 31.667l3.1667 11.167 3.3333-11.333-6.5 0.1667z" fill="url(#k)"/>
+   <path d="m-44 37.086l1.7051 5.7475 1.7949-5.8333-3.5 0.0858z" fill="url(#l)"/>
+  </g>
+  <path d="m-39-9.4167c0 0.32217-1.4551 0.58334-3.25 0.58334s-3.25-0.26117-3.25-0.58334c0-0.32216 1.4551-0.58333 3.25-0.58333s3.25 0.26117 3.25 0.58333z" fill="#9f9368" stroke-width=".62"/>
+ </g>
+ <path d="m28.38 55.667l7.2253-3.6667 19.014-6.5v8.5l-16.796 1.8333-9.4437-0.1667z" fill="url(#m)" fill-rule="evenodd" stroke-width=".872"/>
+ <text transform="matrix(.44486 0 0 .4964 10.824 27.701)" x="19.089264" y="20.257312" fill="#3f3f3f" font-family="Georgia" font-size="24" font-weight="bold" stroke-width="0" text-anchor="middle">PDF</text>
+</svg>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<customUI xmlns="http://schemas.microsoft.com/office/2006/01/customui" xmlns:x="PerditionC" >
+
+	<ribbon>
+		<tabs>
+			<tab idMso="TabHome" >
+				<group id="vbaPDF_MainGroup1" label="PDF" insertBeforeMso="GroupEditing" >
+					<box id="vbaPDF_MainBox1" boxStyle="vertical">
+						<!-- <labelControl id="vbaPDF_MainBox1_Button1_Spacer" /> -->
+						<button id="testbutn" label="my menu" image="PdfIconAlt" description="Howdy World!" />
+						<button id="vbaPDF_MainBox1_Button2"
+							onAction="VBAPortableDocumentFormat.Ribbon.Ribbon_ButtonDoAction"
+							label="PDF Action"
+							image="PdfIcon"
+							screentip="View/Edit or Combine PDF documents"
+							supertip="SuperTip: View/Edit or Combine PDF documents"
+							visible="true"
+						/>
+						<!-- <labelControl id="vbaPDF_MainBox1_Button3_Spacer" /> -->
+						<button id="mybutton" label="my button" imageMso="HappyFace" description="Howdy World!" />
+					</box>
+				</group>
+			</tab>
+		</tabs>
+	</ribbon>
+
+</customUI>
