@@ -3,6 +3,26 @@ Attribute VB_Name = "Tests"
 Option Explicit
 
 
+Sub TestBookmarkEditor()
+    Const basedir As String = "C:\Users\jeremyd\Downloads\pdf-association.pdf20examples\"
+    Dim pdfDoc As pdfDocument
+    Set pdfDoc = pdfDocument.pdfDocument
+    ' attempt to load PDF document, initializes trailer and rootCatalog but otherwise does not parse PDF objects contained in document
+    If Not pdfDoc.loadPdf(basedir & "combined.pdf") Then
+        Debug.Print "Error loading " & pdfDoc.fileName
+    End If
+    ' actually load all the pdf objects referenced from the root catalog (does not load orphan'd objects)
+    If Not pdfDoc.parsePdf() Then
+        Debug.Print "Error parsing pdf " & pdfDoc.fileName
+    End If
+    
+    Dim ufBEd As ufBookmarkEditor
+    Set ufBEd = ufBookmarkEditor.CreateBookmarkEditorForm(pdfDoc) ' New ufBookmarkEditor
+    'ufBEd.SetPDFDocument pdfDoc
+    'ufBEd.Show
+    Stop
+End Sub
+
 ' Call the function like this:
 Sub TestPdfCombine()
     Const basedir As String = "C:\Users\jeremyd\Downloads\"

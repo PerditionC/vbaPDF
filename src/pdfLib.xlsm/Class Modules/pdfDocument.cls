@@ -616,23 +616,88 @@ Public Function NewOutlines(ByRef parent As pdfValue, Optional ByRef defaults As
     Set NewOutlines = NewTopLevelDictionary("/Outlines", parent, defaults)
 End Function
 
-' adds a /Outlines to document, specifies top level /Outline item(s)
+' add (or sets) top level /Root /Outlines of document
+' if anOutlineItem is Nothing then creates default toplevel /Outlines item if doesn't already exist
+' otherwise sets Outlines to specified object
+Public Sub AddOutlines(Optional ByRef anOutlineItem As pdfValue = Nothing)
+    If anOutlineItem Is Nothing Then
+        If Outlines.valueType = PDF_ValueType.PDF_Null Then
+            Set Outlines = NewOutlines(Nothing)
+            ' don't forget to add to our object cache
+            Set objectCache(Outlines.ID) = Outlines
+        End If
+    Else
+        Set Outlines = anOutlineItem
+    End If
+End Sub
+
+' follows a linked list and returns pdfValue at end
+' item can be obj or obj reference, returns obj reference
+Private Function GetEndOfChain(ByRef item As pdfValue, ByRef linkName As String) As pdfValue
+    Dim nullValue As pdfValue: Set nullValue = pdfValue.NewValue(Null)
+    Dim obj As pdfValue
+    Dim nextItem As pdfValue: Set nextItem = item
+    If nextItem Is Nothing Then Set nextItem = nullValue
+    ' we expect item and nextItem to object references, but we need actual obj to follow linked list
+    If nextItem.valueType = PDF_ValueType.PDF_Reference Then Set obj = getObject(nextItem.value, nextItem.generation)
+    Set GetEndOfChain = nextItem.referenceObj
+    Do While nextItem.valueType = PDF_ValueType.PDF_Dictionary
+        Dim dict As Dictionary: Set dict = nextItem.asDictionary()
+        Set nextItem = nullValue
+        If dict.Exists(linkName) Then
+            Set nextItem = dict.item(linkName)
+            If nextItem.valueType = PDF_ValueType.PDF_Reference Then Set obj = getObject(nextItem.value, nextItem.generation)
+            If nextItem.valueType = PDF_ValueType.PDF_Dictionary Then
+                Set GetEndOfChain = nextItem.referenceObj
+            End If
+        End If
+    Loop
+End Function
+
+
+' creates a default initialized /Outline item object
+' defaults should include /First /Last along with /Count, /Title /Prev /Next and optionally /Dest
+Public Function NewOutlineItem(ByRef parent As pdfValue, Optional ByRef defaults As Dictionary) As pdfValue
+    If defaults Is Nothing Then Set defaults = New Dictionary
+    With defaults
+        'If Not .Exists("/Next") Then Set .Item("/Next") = pdfValue.NewValue(Null)
+        'If Not .Exists("/Prev") Then Set .Item("/Prev") = pdfValue.NewValue(Null)
+        'If Not .Exists("/Count") Then Set .item("/Count") = pdfValue.NewValue(1)
+    End With
+    ' Note: /Type /OutlineItem doesn't exist in spec, but should be safe as no /Type specified & additional entries allowed
+    Set NewOutlineItem = NewTopLevelDictionary("/OutlineItem", parent, defaults)
+End Function
+
+' adds a /Outlines to document, specifies parent /Outline
+' if parent is Nothing or PDF_Null then will use root /Outline (.Outlines)
 ' if Outlines is Nothing then will also set top level /Root /Outlines to newOutlines
-' IF OutlineItem does not have its /Next and /Prev values set already then adds to end of list
+'
+' If OutlineItem does not have its /Next and /Prev values set already then adds to end of list
 ' we update it's /Parent and if needed /First and /Last of /Outline
 ' OutlineItem's /Count is added to Outline's /Count
-Public Sub AddOutlines(Optional ByRef anOutlineItem As pdfValue = Nothing)
+Public Sub AddOutlineItem(ByRef parent As pdfValue, Optional ByRef anOutlineItem As pdfValue = Nothing)
     ' ensure top level dictionary is initialized
+    If parent Is Nothing Then Set parent = pdfValue.NewValue(Null)
     If Outlines.valueType = PDF_ValueType.PDF_Null Then
         Set Outlines = NewOutlines(Nothing)
     End If
+    If parent.valueType = PDF_ValueType.PDF_Null Then Set parent = Outlines
     
     ' insert a new /OutlineItem into our outlines
     If Not anOutlineItem Is Nothing Then
+        ' ensure parent is correctly set
+        Set anOutlineItem.asDictionary("/Parent") = parent.referenceObj
+        ' see if we need to assign and id and add to our objectcache
+        If anOutlineItem.ID < 0 Then
+            anOutlineItem.ID = nextObjId
+            anOutlineItem.generation = 0
+            objectCache.Add anOutlineItem.ID, anOutlineItem
+        End If
+    
         ' determine if /First and /Last exists or need to be created
         ' determine if this item is being appended to end or has picked its place
         Dim first As pdfValue, last As pdfValue, prevItem As pdfValue, nextItem As pdfValue
-        With Outlines.asDictionary()
+        With parent.asDictionary()
             If .Exists("/First") Then
                 Set first = .item("/First")
             Else
@@ -696,57 +761,6 @@ Public Sub AddOutlines(Optional ByRef anOutlineItem As pdfValue = Nothing)
             End If
             Set .item("/Count") = pdfValue.NewValue(count)
         End With
-    End If
-End Sub
-
-' follows a linked list and returns pdfValue at end
-' item can be obj or obj reference, returns obj reference
-Private Function GetEndOfChain(ByRef item As pdfValue, ByRef linkName As String) As pdfValue
-    Dim nullValue As pdfValue: Set nullValue = pdfValue.NewValue(Null)
-    Dim obj As pdfValue
-    Dim nextItem As pdfValue: Set nextItem = item
-    If nextItem Is Nothing Then Set nextItem = nullValue
-    ' we expect item and nextItem to object references, but we need actual obj to follow linked list
-    If nextItem.valueType = PDF_ValueType.PDF_Reference Then Set obj = getObject(nextItem.value, nextItem.generation)
-    Set GetEndOfChain = nextItem.referenceObj
-    Do While nextItem.valueType = PDF_ValueType.PDF_Dictionary
-        Dim dict As Dictionary: Set dict = nextItem.asDictionary()
-        Set nextItem = nullValue
-        If dict.Exists(linkName) Then
-            Set nextItem = dict.item(linkName)
-            If nextItem.valueType = PDF_ValueType.PDF_Reference Then Set obj = getObject(nextItem.value, nextItem.generation)
-            If nextItem.valueType = PDF_ValueType.PDF_Dictionary Then
-                Set GetEndOfChain = nextItem.referenceObj
-            End If
-        End If
-    Loop
-End Function
-
-
-' creates a default initialized /Outline item object
-' defaults should include /First /Last along with /Count, /Title /Prev /Next and optionally /Dest
-Public Function NewOutlineItem(ByRef parent As pdfValue, Optional ByRef defaults As Dictionary) As pdfValue
-    If defaults Is Nothing Then Set defaults = New Dictionary
-    With defaults
-        'If Not .Exists("/Next") Then Set .Item("/Next") = pdfValue.NewValue(Null)
-        'If Not .Exists("/Prev") Then Set .Item("/Prev") = pdfValue.NewValue(Null)
-        'If Not .Exists("/Count") Then Set .item("/Count") = pdfValue.NewValue(1)
-    End With
-    ' Note: /Type /OutlineItem doesn't exist in spec, but should be safe as no /Type specified & additional entries allowed
-    Set NewOutlineItem = NewTopLevelDictionary("/OutlineItem", parent, defaults)
-End Function
-
-' adds a /Outlines to document, specifies top level /Outline item(s)
-' if Outlines is Nothing then will also set top level /Root /Outlines to newOutlines
-Public Sub AddOutlineItem(ByRef parent As pdfValue, Optional ByRef anOutlineItem As pdfValue = Nothing)
-    ' ensure top level dictionary is initialized
-    If Outlines.valueType = PDF_ValueType.PDF_Null Then
-        Set Outlines = NewOutlines(Nothing)
-    End If
-    
-    ' insert a new /OutlineItem into our outlines
-    If Not anOutlineItem Is Nothing Then
-        ' create /First and /Last if needed, otherwise update /Last and /Count and /Next & /Prev
     End If
 End Sub
 
@@ -1111,7 +1125,7 @@ Sub SavePdfObject(ByRef outputFileNum As Integer, ByRef obj As pdfValue, _
             ByRef offset As Long, Optional ByVal baseId As Long = 0, Optional ByVal prettyPrint As Boolean = True)
     On Error GoTo errHandler
     
-    If False And (obj.valueType = PDF_ValueType.PDF_Stream) Then
+    If (obj.valueType = PDF_ValueType.PDF_Stream) Then
         ' see if its a stream object stream (any other object stream  written out asis)
         If obj.asDictionary.Exists("/Type") Then
             Dim pdfNameValue As pdfValue
@@ -1126,6 +1140,35 @@ Sub SavePdfObject(ByRef outputFileNum As Integer, ByRef obj As pdfValue, _
     
     Exit Sub
 errHandler:
+    Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
+    Stop
+End Sub
+
+    
+' save all nested /Outlines objects beginning with outlineParentObj
+' pass in .Outlines to save full outline hierarchy, or any subtree as needed
+Sub SaveOutlinePdfObjects(ByRef outputFileNum As Integer, ByRef outlineParentObj As pdfValue, _
+            ByRef offset As Long, Optional ByVal baseId As Long = 0, Optional ByVal prettyPrint As Boolean = True)
+    On Error GoTo ErrHandler
+    SavePdfObject outputFileNum, outlineParentObj, offset, baseId, prettyPrint
+    If outlineParentObj.hasKey("/First") Then
+        Dim outlineObj As pdfValue
+        Set outlineObj = outlineParentObj.asDictionary().item("/First")
+        ' next line should always be true, only an indirect reference not object itself
+        If outlineObj.valueType = PDF_ValueType.PDF_Reference Then Set outlineObj = getObject(outlineObj.value, outlineObj.generation)
+        Do While Not outlineObj Is Nothing
+            ' recursively save outline tree
+            SaveOutlinePdfObjects outputFileNum, outlineObj, offset, baseId, prettyPrint
+            If outlineObj.hasKey("/Next") Then
+                Set outlineObj = outlineObj.asDictionary().item("/Next")
+                Set outlineObj = getObject(outlineObj.value, outlineObj.generation)
+            Else
+                Set outlineObj = Nothing
+            End If
+        Loop
+    End If
+    Exit Sub
+ErrHandler:
     Debug.Print "Error: " & Err.Description & " (" & Err.Number & ")"
     Stop
 End Sub

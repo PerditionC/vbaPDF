@@ -10,7 +10,11 @@ Public Sub PickAndCombinePdfFiles()
     ufFileOrder.list = files
     ufFileOrder.Show
     files = ufFileOrder.list
-    CombinePDFs files, "combined.pdf"
+    Dim resultFn As String
+    resultFn = SelectSaveFileName("C:\Users\jeremyd\Downloads\combined.pdf")
+    If Not IsBlank(resultFn) Then
+        CombinePDFs files, resultFn
+    End If
 End Sub
 
 
@@ -31,7 +35,8 @@ Public Sub CombinePDFs(ByRef sourceFiles() As String, ByRef outFile As String)
     outputFileNum = combinedPdfDoc.SavePdfHeader(outFile, offset)
     
     ' get where to start renumbering objs in pdf, we need to skip past our toplevel /Root, /Info, /Pages, & /Outlines
-    Dim baseId As Long: baseId = combinedPdfDoc.nextObjId
+    ' so we use combinedPdfDoc's nextObjId which automatically increments on each use, so we store for stable value during iteration
+    Dim baseId As Long
     
     Dim ndx As Long
     For ndx = LBound(sourceFiles) To UBound(sourceFiles)
@@ -44,13 +49,19 @@ Public Sub CombinePDFs(ByRef sourceFiles() As String, ByRef outFile As String)
         pdfDoc.parsePdf
         
         ' adjust obj id's so no conflict with previously stored ones
-        pdfDoc.renumberIds baseId + 1   ' +1 as baseId used for our /OutlineItem
+        baseId = combinedPdfDoc.nextObjId
+        pdfDoc.renumberIds baseId
+            
+        ' determine highest id used, 1st obj we add or next file will start at this + 1
+        ' Note: we need to use pdfDoc.xrefTable's size and not combinedPdfDoc.xrefTable as we are reserving full count from just loaded pdf document
+        baseId = baseId + pdfDoc.xrefTable.count - 1 ' highest id possible so far
+        combinedPdfDoc.nextObjId = baseId + 1
             
         ' add the first page of this document as a Named Destination to our combined pdf
         ' Note: we assume current pageCount is how many existing pages there are, with
         ' the next page being 1st of just loaded document, then subtract 1 as page# begins with 0
         Dim docDestinationName As pdfValue
-        Set docDestinationName = pdfValue.NewNameValue("/" & pdfDoc.Title & ".1", utf8:=True)
+        Set docDestinationName = pdfValue.NewNameValue("/" & pdfDoc.Title & ".1", utf8BOM:=False)
         Dim docDestination As pdfValue
         Set docDestination = combinedPdfDoc.NewDestination(combinedPdfDoc.pageCount, PDF_FIT.PDF_FIT)
         combinedPdfDoc.AddNamedDestinations docDestinationName, docDestination
@@ -76,56 +87,97 @@ Public Sub CombinePDFs(ByRef sourceFiles() As String, ByRef outFile As String)
         ' so we need to add this /Pages to our top level /Pages and add a /Parent indirect reference
         combinedPdfDoc.AddPages pdfDoc.Pages
         
-        ' we need to copy/merge some optional fields such as /Outline for bookmarks
-        If False And pdfDoc.rootCatalog.hasKey("/Outlines") Then
+        ' we add a bookmark to 1st page of each combined document
+        ' TODO, make this optional
+        ' TODO, check if we already did this, i.e. combining a previously combined file and another
+        ' defaults should include /First /Last along with /Count, /Title /Prev /Next and optionally /Dest
+        Dim defaults As Dictionary: Set defaults = New Dictionary
+        Set defaults("/Title") = pdfValue.NewValue(pdfDoc.Title)
+        Set defaults("/Dest") = docDestinationName
+        Dim parentOutlineItem As pdfValue
+        Set parentOutlineItem = combinedPdfDoc.NewOutlineItem(combinedPdfDoc.Outlines, defaults)
+        combinedPdfDoc.AddOutlineItem Nothing, parentOutlineItem
+        ' don't save here as we may need to adjust /Prev & /Next values
+        
+        ' next we need to merge any existing bookmarks
+        If pdfDoc.rootCatalog.hasKey("/Outlines") Then
             ' Note: these are objs in pdfDoc so we need to remove if we add equivalent ones to combindedPdfDoc to avoid duplicates
-            ' hack for now, just copy over
-            'combinedPdfDoc.rootCatalog.asDictionary().Add "/Outlines", pdfDoc.rootCatalog.asDictionary().item("/Outlines")
-            ' TODO
+            Dim outline As pdfValue
+            Dim topLevelOutline As pdfValue
+            Set topLevelOutline = pdfDoc.rootCatalog.asDictionary().item("/Outlines")
+            If topLevelOutline.valueType <> PDF_ValueType.PDF_Null Then
+                If topLevelOutline.valueType = PDF_ValueType.PDF_Reference Then
+                    Set topLevelOutline = pdfDoc.getObject(topLevelOutline.value, topLevelOutline.generation)
+                End If
+                pdfDoc.objectCache.Remove topLevelOutline.ID
+                
+                ' toplevel outline probably doesn't have a title or siblings, so adds useless indirection
+                If topLevelOutline.asDictionary().Exists("/Next") Or topLevelOutline.asDictionary().Exists("/Title") Then
+                    ' we need to change its id so doesn't conflict
+                    topLevelOutline.ID = -1
+                    combinedPdfDoc.AddOutlineItem parentOutlineItem, topLevelOutline
+                    ' we cycle through topLevelOutline, but use parentOutlineItem as its direct descendant's parent object, so skipping empty level
+                    Set parentOutlineItem = topLevelOutline
+                'Else skip adding it, and adjust its kids to point to out new filelevel bookmark as their parent
+                End If
+                
+                ' TODO, if toplevel does has siblings, we need to handle them somehow, for now we just ignore and drop them
+                                    
+                ' now we need to update all its kids (but not add)
+                If topLevelOutline.asDictionary().Exists("/First") Then
+                    Set outline = topLevelOutline.asDictionary().item("/First")
+                    Dim nextOutline As pdfValue
+                    Dim firstOutline As pdfValue
+                    Dim prevOutline As pdfValue
+                    Do While Not outline Is Nothing
+                        If outline.valueType = PDF_ValueType.PDF_Reference Then Set outline = pdfDoc.getObject(outline.value, outline.generation)
+                        pdfDoc.objectCache.Remove outline.ID
+                        outline.ID = combinedPdfDoc.nextObjId
+                        outline.generation = 0
+                        Set outline.asDictionary("/Parent") = parentOutlineItem.referenceObj
+                        combinedPdfDoc.objectCache.Add outline.ID, outline
+                        If firstOutline Is Nothing Then
+                            Set firstOutline = outline ' really just a flag, could use a Boolean here
+                            ' update parent's first
+                            Set parentOutlineItem.asDictionary("/First") = outline.referenceObj
+                        End If
+                        If Not prevOutline Is Nothing Then
+                            ' update next and prev links
+                            Set prevOutline.asDictionary("/Next") = outline.referenceObj
+                            Set outline.asDictionary("/Prev") = prevOutline.referenceObj
+                        End If
+                        ' TODO recurse from here too!
+                        If outline.asDictionary().Exists("/Next") Then
+                            Set prevOutline = outline
+                            Set outline = outline.asDictionary().item("/Next")
+                        Else
+                            ' update parent's last
+                            Set parentOutlineItem.asDictionary("/Last") = outline.referenceObj
+                            Set outline = Nothing
+                        End If
+                    Loop
+                End If
+            End If
         Else
-            ' defaults should include /First /Last along with /Count, /Title /Prev /Next and optionally /Dest
-            Dim defaults As Dictionary: Set defaults = New Dictionary
-            Set defaults("/Title") = pdfValue.NewValue(pdfDoc.Title)
-            Set defaults("/Dest") = docDestinationName
-            Dim outlineItem As pdfValue
-            Set outlineItem = combinedPdfDoc.NewOutlineItem(combinedPdfDoc.Outlines, defaults)
-            combinedPdfDoc.AddOutlines outlineItem
-            ' don't save here as we may need to adjust /Prev & /Next values
         End If
             
         ' remove /Root object and ensure only left with 1 /Root
         ' Warning: objectCache is used to convert references to objs, so do not attempt to retrieve any
         ' objects via obj reference after removing them from objectCache
-        pdfDoc.objectCache.Remove pdfDoc.rootCatalog.id
+        pdfDoc.objectCache.Remove pdfDoc.rootCatalog.ID
         ' also need to remove /Info from cache
-        If pdfDoc.objectCache.Exists(pdfDoc.Info.id) Then
-            pdfDoc.objectCache.Remove pdfDoc.Info.id
+        If pdfDoc.objectCache.Exists(pdfDoc.Info.ID) Then
+            pdfDoc.objectCache.Remove pdfDoc.Info.ID
         End If
         ' and now save all the pages and other non-toplevel objects to our combined document
         combinedPdfDoc.SavePdfObjects outputFileNum, pdfDoc.objectCache, offset
         
-        ' determine highest id used, 1st obj in next file will start at this + 1
-        ' Note: we need to use pdfDoc.xrefTable's size and not combinedPdfDoc.xrefTable as we are reserving full count from just loaded pdf document
-        baseId = baseId + pdfDoc.xrefTable.count - 1 ' highest id possible so far
-        combinedPdfDoc.nextObjId = baseId + 1
         DoEvents
     Next ndx
     
-    combinedPdfDoc.SavePdfObject outputFileNum, combinedPdfDoc.Outlines, offset
-    If combinedPdfDoc.Outlines.hasKey("/First") Then
-        Dim outlineObj As pdfValue
-        Set outlineObj = combinedPdfDoc.Outlines.asDictionary().item("/First")
-        Set outlineObj = combinedPdfDoc.getObject(outlineObj.value, outlineObj.generation)
-        Do While Not outlineObj Is Nothing
-            combinedPdfDoc.SavePdfObject outputFileNum, outlineObj, offset
-            If outlineObj.hasKey("/Next") Then
-                Set outlineObj = outlineObj.asDictionary().item("/Next")
-                Set outlineObj = combinedPdfDoc.getObject(outlineObj.value, outlineObj.generation)
-            Else
-                Set outlineObj = Nothing
-            End If
-        Loop
-    End If
+    ' save outline objects
+    combinedPdfDoc.SaveOutlinePdfObjects outputFileNum, combinedPdfDoc.Outlines, offset
+    
     ' save updated /Pages object (but not nested objects as already saved)
     combinedPdfDoc.SavePdfObject outputFileNum, combinedPdfDoc.Pages, offset
     combinedPdfDoc.SavePdfObject outputFileNum, combinedPdfDoc.rootCatalog, offset
@@ -169,3 +221,49 @@ Function PickFiles(Optional ByVal AllowMultiSelect As Boolean = True) As String(
  
     Set fd = Nothing
 End Function
+
+
+'Create a FileDialog object as a File Picker dialog box and returns String array of files selected.
+Function SelectSaveFileName(ByVal suggestedPath As String) As String
+    Dim fd As FileDialog
+    Set fd = Application.FileDialog(msoFileDialogSaveAs)
+    With fd
+        .AllowMultiSelect = False
+        .Title = "Save PDF file as:"
+        .InitialFileName = suggestedPath
+        ' .Filters can not be modified
+        '.FilterIndex = 26  ' PDF
+        Dim ndx As Long
+        For ndx = 1 To .Filters.count
+            If InStr(1, .Filters(ndx).Extensions, "*.pdf", vbTextCompare) > 0 Then
+                .FilterIndex = ndx
+                Exit For
+            End If
+        Next
+        Debug.Print .FilterIndex & " " & .Filters(ndx).Description & "-" & .Filters(ndx).Extensions
+ 
+        'Use the Show method to display the File Picker dialog box and return the user's action.
+        'The user pressed the button.
+        If .Show = -1 Then
+            If .SelectedItems.count > 0 Then
+                'Step through each string in the FileDialogSelectedItems collection.
+                Dim files() As String
+                ReDim files(0 To .SelectedItems.count - 1)
+                'Dim ndx As Long
+                For ndx = 1 To .SelectedItems.count
+                    files(ndx - 1) = .SelectedItems(ndx)
+                Next ndx
+                SelectSaveFileName = files(0)
+            Else
+                'SelectSaveFileName = vbNullString
+            End If
+        Else 'The user pressed Cancel.
+            'SelectSaveFileName = vbNullString
+        End If
+        
+        '.Filters.Clear
+    End With
+ 
+    Set fd = Nothing
+End Function
+

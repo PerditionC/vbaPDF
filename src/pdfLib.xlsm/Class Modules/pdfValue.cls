@@ -21,7 +21,7 @@ Private m_referenceObj As pdfValue
 ' used to help encode certain information about how to represent
 Public Enum ValueFlags
     flgNone = 0
-    flgUtf8 = 1
+    flgUtf8BOM = 1
     flgBinary = 2
 End Enum
 
@@ -29,7 +29,7 @@ Public flags As ValueFlags
 
 
 ' keep our referencObj in sync
-Public Property Let id(ByVal newId As Long)
+Public Property Let ID(ByVal newId As Long)
     m_id = newId
     If valueType = PDF_ValueType.PDF_Object Then
         If Not referenceObj Is Nothing Then
@@ -195,7 +195,7 @@ Public Function serialize(Optional ByVal baseId As Long = 0) As Byte()
         Case PDF_ValueType.PDF_Null
             objStr = "null"
         Case PDF_ValueType.PDF_Name
-            objStr = pdfDocument.EscapeName(value.value, value.flags And flgUtf8)  ' see below where Dictionary Key Name encoded
+            objStr = pdfDocument.EscapeName(value.value, value.flags And flgUtf8BOM)  ' see below where Dictionary Key Name encoded
         Case PDF_ValueType.PDF_Boolean
             If value.value Then
                 objStr = "true"
@@ -234,8 +234,10 @@ Public Function serialize(Optional ByVal baseId As Long = 0) As Byte()
                 If typeName(v) = "String" Then
                     key = CStr(v)
                 Else 'If typeName(v) = "pdfValue" Then ' assume pdfValue with valueType=PDF_Name
-                        key = pdfDocument.EscapeName(v.value, v.flags And flgUtf8)
+                        key = CStr(v.value)
                 End If
+                ' key is always a /Name and should be considered UTF8 without BOM
+                key = pdfDocument.EscapeName(key, addUtf8BOM:=False)
                 Set pv = dict.item(v) ' v may be pdfValue or String version of key
                 objStr = objStr & key & " "
                 objStr = objStr & BytesToString(pv.serialize(baseId))
@@ -294,10 +296,10 @@ End Function
 ' can be used by predeclared object, e.g. pdfValue.NewValueObj("/MyName", "/Name")
 
 ' returns a name as a pdfValue /Name obj
-Function NewNameValue(ByVal name As String, Optional ByVal utf8 As Boolean = False) As pdfValue
-    If Left$(name, 1) <> "/" Then name = "/" & name
-    Set NewNameValue = NewValue(name, "/Name")
-    If utf8 Then NewNameValue.flags = flgUtf8
+Function NewNameValue(ByVal Name As String, Optional ByVal utf8BOM As Boolean = False) As pdfValue
+    If Left$(Name, 1) <> "/" Then Name = "/" & Name
+    Set NewNameValue = NewValue(Name, "/Name")
+    If utf8BOM Then NewNameValue.flags = flgUtf8BOM
 End Function
 
 
