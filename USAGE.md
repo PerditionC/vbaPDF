@@ -191,14 +191,15 @@ sourceDoc.renumberIds base          ' shifts every object id
 ## 8  Minimal cheat-sheet  
 
 ```vba
-Dim pdf As New pdfDocument      ' create
-pdf.Open "in.pdf"               ' load
+Dim pdf As pdfDocument
+set pdf = New pdfDocument       ' create
+pdf.OpenPdf "in.pdf"            ' load
 
 Debug.Print pdf.PageCount       ' -> number
 pdf.Title = "New title"         ' write /Info
 
 pdf.RemovePage 1                ' drop first page
-pdf.Save "out.pdf"              ' write to disk
+pdf.SaveAs "out.pdf"            ' write to disk
 ```
 
 ---
