@@ -46,8 +46,8 @@ Main entry points
 ' No references or external libraries required.
 
 Sub HelloPDF()
-    Dim pdf As New pdfDocument
-    pdf.Open "C:\Docs\Test.pdf"         ' Load
+    Dim pdf As pdfDocument: set pdf = New pdfDocument
+    pdf.openPdf "C:\Docs\Test.pdf"      ' Load
     MsgBox "Pages: " & pdf.PageCount    ' Inspect
     pdf.Save "C:\Docs\Test-copy.pdf"    ' Save copy
 End Sub
@@ -60,14 +60,14 @@ End Sub
 ### 4.1 Open, inspect & close  
 
 ```vba
-Dim doc As New pdfDocument
-doc.Open "C:\tmp\report.pdf"
+Dim doc As pdfDocument
+set doc = pdfDocument.pdfDocument("C:\tmp\report.pdf")
 
 Debug.Print "Title    : "; doc.Title
 Debug.Print "Producer : "; doc.Info.asDictionary("/Producer").Value
 Debug.Print "Pages    : "; doc.PageCount
 
-doc.Close
+set doc = Nothing
 ```
 
 ---
