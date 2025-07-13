@@ -4,17 +4,17 @@
 
 ## 1  Overview  
 
-`vbaPDF` is a pure-VBA library for **reading, writing and merging PDF files** from Excel (untested but should also work with Word or any Office host that supports VBA.)  The design is pdf "value" and "object-level" based – PDF objects are parsed into strongly-typed wrapper classes (`pdfDocument`, `pdfValue`, `pdfStream`, …) so you can inspect or modify the underlying structure without external DLLs.
+`vbaPDF` is a pure-VBA library for **reading, writing and merging PDF files** from Excel (untested but should also work with Word or any Office host that supports VBA.)  The design is pdf "value" and "object-level" based – PDF objects are parsed into wrapper classes (`pdfDocument`, `pdfValue`, `pdfStream`, …) so you can inspect or modify the underlying structure without external DLLs.
 
 Main entry points  
 
 | Module/Class | Purpose | Notes |
 |--------------|---------|-------|
-| **pdfDocument** (class) | Open, parse, edit, save a PDF. | Core API – almost everything you need. |
-| **Main.bas** | Ready-made helpers: file-picker UserForms and `CombinePDFs`. | Good reference for real-world use. |
-| **pdfValue** | Universal wrapper for every PDF value type. | Internal but useful for power users. |
-| **pdfStream** | Handles `stream … endstream` objects, incl. deflate decode. | |
-| **UserForms** `ufPdfInfo`, `ufFileList`, `ufBookmarkEditor` | UI widgets for demos (optional). | |
+| **pdfDocument** (class) | Open, parse, edit, save a PDF. | Core API – primary API for interacting with PDFs |
+| **Main.bas** | Ready-made helpers: file-picker UserForms and `CombinePDFs`. | Reference examples |
+| **pdfValue** | Universal wrapper for every PDF value type. | Internal, represents all values stored in a PDF |
+| **pdfStream** | Handles `stream … endstream` objects, incl. deflate decode. | Internal, not usually directly used |
+| **UserForms** `ufPdfInfo`, `ufFileList`, `ufBookmarkEditor` | UI widgets for demos (optional). | GUI for reference examples |
 
 ---
 
@@ -23,7 +23,7 @@ Main entry points
 | Feature | Status | Where / Comments |
 |---------|--------|------------------|
 | Load PDF (incl. 1.0 – 2.0 headers, xref tables & xref streams) | ✅ Implemented | `pdfDocument.loadPdf` (only subset of PDF specification supported) |
-| Parse full object tree into memory | 🚧 | `pdfDocument.parsePdf` |
+| Parse full object tree into memory | ⚠️ | `pdfDocument.parsePdf` (implemented for all supported features, may have issues with unsupported features) |
 | Save PDF (re-writes xref, trailer) | ✅ | `savePdf / savePdfAs` |
 | Append / remove pages | ✅ | `AddPages`, `RemovePage` (example below) |
 | Combine/merge PDFs | ✅ | `Main.CombinePDFs` |
@@ -89,9 +89,12 @@ Next i
 ```vba
 '--- add a blank page to the end ---
 doc.AddPage        ' Wrapper around NewPage + AddPages
+```
 
-'--- remove third page (1-based index) ---
-doc.RemovePage 3
+**[TO BE IMPLEMENTED]**
+```vba
+'--- remove third page (0-based index) ---
+doc.RemovePage 2
 ```
 
 ---
