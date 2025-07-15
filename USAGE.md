@@ -16,6 +16,8 @@ Main entry points
 | **pdfStream** | Handles `stream … endstream` objects, incl. deflate decode. | Internal, not usually directly used |
 | **UserForms** `ufPdfInfo`, `ufFileList`, `ufBookmarkEditor` | UI widgets for demos (optional). | GUI for reference examples |
 
+See [API.md](API.md) for more details.
+
 ---
 
 ## 2  Feature Matrix  
@@ -31,8 +33,8 @@ Main entry points
 | Read/write Catalog, /Pages, /Outlines, /Dests | ✅ | dedicated helpers |
 | Named destinations | ✅ | `AddNamedDestinations` |
 | Bookmarks (Outlines) read + basic write | ⚠️ Partial | Writing works but deep nesting helpers TODO |
-| Text extraction | 🚧 TODO | No high-level API yet; would require content-stream parser |
-| Form fields (AcroForm) | 🚧 TODO | Not yet coded |
+| Text extraction | ⚠️ Partial | In progress building content-stream parser, will **NOT** do OCR or advanced extraction |
+| Form fields (AcroForm) | 🚧 TODO | possibly in the future if needed or requested |
 | Encryption / passwords | ❌ Not planned |
 | Incremental update | ❌ Not planned (library always rewrites full file) |
 
@@ -47,9 +49,9 @@ Main entry points
 
 Sub HelloPDF()
     Dim pdf As pdfDocument: set pdf = New pdfDocument
-    pdf.openPdf "C:\Docs\Test.pdf"      ' Load
+    pdf.OpenPdf "C:\Docs\Test.pdf"      ' Load
     MsgBox "Pages: " & pdf.PageCount    ' Inspect
-    pdf.Save "C:\Docs\Test-copy.pdf"    ' Save copy
+    pdf.SavePdf "C:\Docs\Test-copy.pdf"    ' Save copy
 End Sub
 ```
 
@@ -91,8 +93,8 @@ Next i
 doc.AddPage        ' Wrapper around NewPage + AddPages
 ```
 
-**[TO BE IMPLEMENTED]**
 ```vba
+' CURRENTLY NOT IMPLEMENTED – placeholder API
 '--- remove third page (0-based index) ---
 doc.RemovePage 2
 ```
@@ -142,7 +144,7 @@ Sub Merge()
 End Sub
 ```
 
-`Main.bas` also contains `PickAndCombinePdfFiles` which pops file-picker/UI forms so end-users can do the same without writing code.
+`Main.bas` also contains `PickAndCombinePdfFiles` which displays file-picker/UI forms so end-users can do the same without writing code.
 
 ---
 
@@ -152,7 +154,7 @@ Useful when you splice objects from one document into another.
 
 ```vba
 Dim base As Long
-base = targetDoc.nextObjId          ' first free id in destination
+base = targetDoc.nextObjId          ' first free id in destination, note it auto-advances to next call =+1
 sourceDoc.renumberIds base          ' shifts every object id
 ```
 
@@ -199,7 +201,7 @@ Debug.Print pdf.PageCount       ' -> number
 pdf.Title = "New title"         ' write /Info
 
 pdf.RemovePage 1                ' drop first page
-pdf.SaveAs "out.pdf"            ' write to disk
+pdf.SavePdfAs "out.pdf"            ' write to disk
 ```
 
 ---
