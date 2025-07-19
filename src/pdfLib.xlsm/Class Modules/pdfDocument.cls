@@ -91,6 +91,13 @@ Public Enum PDF_FIT
 End Enum
 
 
+'Font encoding maps: key = FontName, value = Dictionary(key = Code to value = Unicode character as String)
+Private mFontMaps As Dictionary
+
+'Cached ParseContentStream results (key = pageIndex to value = Collection of ContentOp)
+Private mOpCache As Dictionary
+
+
 ' version in PDF
 ' generally one of: %PDF 1.0 %PDF 1.1 %PDF 1.2 %PDF 1.3 %PDF 1.4 %PDF 1.5 %PDF 1.6 %PDF 1.7 %PDF-2.0
 ' should be set to version string in document catalog if exists, otherwise version at start of file
@@ -951,6 +958,13 @@ Public Function getCachedObject(ByVal id As Long, ByVal generation As Long) As p
 End Function
 
 
+' convenience wrapper to call loadPdf/parsePdf
+Public Function openPdf(ByVal pdfFilename As String) As Boolean
+    openPdf = loadPdf(pdfFilename)
+    If openPdf Then openPdf = parsePdf()
+End Function
+
+
 ' initializes pdfDocument by loading a PDF document, does not parse but does minimal validity checks
 ' True on success, false on any error
 ' Note: baseId is used to renumber objs as loaded
@@ -1346,6 +1360,9 @@ Private Sub Class_Initialize()
     Set Info = New pdfValue ' default is null
     Set Meta = New pdfValue ' default is null
     Set Pages = New pdfValue ' default is null
+    
+    Set mFontMaps = New Dictionary ' for extracting text, default is 1-to-1
+    Set mOpCache = New Dictionary
     Exit Sub
 errHandler:
     Debug.Print Err.Description
@@ -1364,6 +1381,10 @@ Private Sub Class_Terminate()
     Set m_Info = Nothing    ' don't set Info as we don't want to update trailer
     Set Meta = Nothing
     Set Pages = Nothing
+    
+    Set mFontMaps = Nothing
+    Set mOpCache = Nothing
+    
     Erase content
     Exit Sub
 errHandler:
@@ -1379,17 +1400,11 @@ End Sub
 ' return a New instance of pdfDocument
 ' Optional, if filename is provided, will load and parse the PDF document
 ' Warning: if error loading or parsing, will return Nothing instead of partially loaded document
-Public Function pdfDocument(Optional ByVal filename As String = vbNullString) As pdfDocument
+Public Function pdfDocument(Optional ByVal fileName As String = vbNullString) As pdfDocument
     Set pdfDocument = New pdfDocument
     
-    If Not IsBlank(filename) Then
-        If pdfDocument.loadPdf(filename) Then
-            If pdfDocument.parsePdf() Then
-                Exit Function
-            End If
-        End If
-        ' error loading, so return Nothing
-        Set pdfDocument = Nothing
+    If Not IsBlank(fileName) Then
+        If pdfDocument.openPdf(fileName) Then Exit Function
     End If
 End Function
 
@@ -1398,15 +1413,29 @@ End Function
 ''''''''''''''''''
 
 ' given raw PDF file contents as Byte array and offset in the array to peak, returns value type at offset
-Private Function GetValueType(ByRef bytes() As Byte, ByVal offset As Long) As PDF_ValueType
+' contentStream: enables check for known Operators in a content stream and returning PDF_Operator when found
+' Note: while always calling with contentStream will work, it will add unnecessary delays due to the extra string matching used
+Private Function GetValueType(ByRef bytes() As Byte, ByVal offset As Long, Optional contentStream As Boolean = False) As PDF_ValueType
     On Error GoTo errHandler
     GetValueType = PDF_ValueType.PDF_Null
     
-    offset = SkipWhiteSpace(bytes, offset)
+    offset = SkipWhitespace(bytes, offset)
     If offset > UBound(bytes) Then Exit Function    ' return null type if end of data
-    Dim token As String: token = chr(bytes(offset))
+    Dim token As String: token = Chr(bytes(offset))
     
     Dim tmpStr As String
+    
+    ' only look for operator matches if processing contentStream data
+    If contentStream Then
+        Dim op_offset As Long: op_offset = offset ' use a copy of offset so if not operator offset is unchanged
+        Dim op As PdfTextOp
+        tmpStr = GetWord(bytes, op_offset)
+        If IsKnownOperator(tmpStr, op) Then
+            GetValueType = PDF_ValueType.PDF_Operator + LShift(op, 8) ' low byte flags as op, high byte of word = op
+            Exit Function
+        End If
+    End If
+    
     Select Case LCase(token)
         Case "n"
             If Not IsMatch(GetWord(bytes, offset), "null") Then Stop ' error! expecting null or value
@@ -1548,14 +1577,15 @@ End Function
 ' bytes() may be content() or uncompressed stream object stream buffer
 ' offset is within bytes() provided
 ' Note: meta is only used for stream object
-Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional ByRef Meta As Dictionary = Nothing) As pdfValue
+' contentStream: enables check for known Operators in a content stream and returning PDF_Operator when found
+Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional ByRef Meta As Dictionary = Nothing, Optional contentStream As Boolean = False) As pdfValue
     On Error GoTo errHandler
     DoEvents
     Dim result As pdfValue: Set result = New pdfValue
     result.id = 0
     result.generation = 0
     result.value = Empty
-    result.valueType = GetValueType(bytes, offset)
+    result.valueType = GetValueType(bytes, offset, contentStream)
     If offset > UBound(bytes) Then Exit Function        ' return null type if end of daa
     
     offset = SkipWhiteSpace(bytes, offset)
@@ -1564,12 +1594,14 @@ Function GetValue(ByRef bytes() As Byte, ByRef offset As Long, Optional ByRef Me
     
     Dim tmpStr As String
     Dim name As pdfValue, value As pdfValue
-    Select Case result.valueType
+    Select Case (result.valueType And &HFF) ' only need to check low byte, high byte of word, 0&FF00, stores operator type
         Case PDF_ValueType.PDF_Null
             ' result.value = Empty
             If Not IsMatch(GetWord(bytes, offset), "null") Then
                 Stop ' error, expecting "null"
             End If
+        Case PDF_ValueType.PDF_Operator
+            result.value = GetWord(bytes, offset)
         Case PDF_ValueType.PDF_Name
             Dim word() As Byte
             Dim count As Long

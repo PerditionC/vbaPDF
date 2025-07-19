@@ -116,6 +116,78 @@ errHandler:
 End Function
 
 
+' returns vba String representation of value
+' Warning: returns Nothing if object is not compatible with String type, i.e. trivially convertable
+Function asString() As String
+    On Error GoTo errHandler
+    If valueType = PDF_ValueType.PDF_String Or valueType = PDF_ValueType.PDF_Name Or valueType = PDF_ValueType.PDF_Operator Then
+        asString = CStr(value)
+    Else
+        asString = BytesToString(serialize())
+    End If
+    Exit Function
+errHandler:
+    Debug.Print Err.Description & " (" & Err.Number & ")"
+    Stop
+    Resume
+End Function
+
+
+' Attempt to return element associated with Key
+' If this value represents a dictionary, then returns value for given key
+' If this value represents an array, then Key must be 1 based index into array
+' If no key is provided, simply returns Value
+' On any error or key not found returns Nothing
+Function GetValue(Optional ByRef key As Variant) As Variant
+    ' not found or no value, return Nothing (instead of Empty)
+    Set GetValue = Nothing
+    
+    If IsMissing(key) Then
+        If IsObject(value) Then
+            Set GetValue = value
+        Else
+            Let GetValue = value
+        End If
+    Else
+        If valueType = PDF_ValueType.PDF_Array Then
+            ' since Collection doesn't have exists method
+            ' we try to retrieve using key
+            ' but since could be object or not we
+            ' also try both ways, and only if both fail raise error
+            Dim v As Variant
+            Dim ndx As Long
+            If IsNumeric(key) Then
+                ndx = CLng(key)
+            Else
+                Debug.Print "Error: bad key, must be numeric 0 based index into Collection " & key
+                Stop
+                Exit Function
+            End If
+            For Each v In value
+                ' we are 0 based, we simply count down from index
+                If ndx = 0 Then
+                    Set GetValue = v
+                    Exit Function
+                End If
+            Next v
+            ' not found
+        Else ' try a type that stores a dictionary
+            Dim dict As Dictionary
+            Set dict = asDictionary()
+            If Not dict Is Nothing Then
+                If dict.Exists(key) Then
+                    If IsObject(dict(key)) Then
+                        Set GetValue = dict(key)
+                    Else
+                        Let GetValue = dict(key)
+                    End If
+                End If
+            End If
+        End If
+    End If
+End Function
+
+
 ' Helper function to convert pdf string to byte array (0..N-1)
 ' escaping values as needed
 Private Function pdfStringToBytes(ByRef str As String, Optional ByVal asHex As Boolean = False) As Byte()
@@ -208,7 +280,7 @@ Public Function serialize(Optional ByVal baseId As Long = 0) As Byte()
             objStr = CDbl(value.value) ' dont' format as we want all current digits stored, it won't add extra 0s anyway
             ' ensure has .0 if whole number
             If InStr(1, objStr, ".", vbBinaryCompare) < 1 Then objStr = objStr & ".0"
-        Case PDF_ValueType.PDF_String
+        Case PDF_ValueType.PDF_String, PDF_ValueType.PDF_Operator
             ' convert to bytes and escape values as needed
             IsBytes = True
             objBytes = pdfStringToBytes(value.value)

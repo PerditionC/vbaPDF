@@ -3,6 +3,15 @@ Attribute VB_Name = "Tests"
 Option Explicit
 
 
+Sub TestReadingText()
+    Const basedir As String = "C:\Users\jeremyd\Downloads\pdf-association.pdf20examples\"
+    Dim pdfDoc As pdfDocument
+    Set pdfDoc = pdfDocument.pdfDocument(basedir & "pdf20-utf8-test.pdf")
+    Dim text As String
+    text = pdfDoc.GetDocumentText()
+    Debug.Print text
+End Sub
+
 Sub TestBookmarkEditor()
     Const basedir As String = "C:\Users\jeremyd\Downloads\pdf-association.pdf20examples\"
     Dim pdfDoc As pdfDocument

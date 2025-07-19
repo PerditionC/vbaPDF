@@ -2,6 +2,41 @@ Attribute VB_Name = "pdfParseAndGetValues"
 ' parses and loads PDF values
 Option Explicit
 
+
+'content stream operators
+Public Enum PdfTextOp
+    opUnknown = 0       ' other/unknown operators
+    opT_J = 1           ' TJ Show text array allowing individual glyph positioning
+    opTj = 2            ' Tj Show text string
+    opQuote = 3         ' '  (single quote) – MoveToNextLine + ShowText
+    opDoubleQuote = 4   ' "  (double quote) – Set word/char spacing + ShowText
+    opTf = 5            ' Tf Set font and size
+    opTd = 6            ' Td Move text position
+    opT_D = 7           ' TD Move text position and set leading
+    opTm = 8            ' Tm Set text matrix
+    opTStar = 9         ' T* Move to start of next line
+End Enum
+
+'Represents a visible text run with position & styling
+Type TextFragment
+    text      As String
+    x         As Double           'User-space coordinates
+    Y         As Double
+    fontName  As String
+    fontSize  As Double
+    IsBold    As Boolean
+    IsItalic  As Boolean
+End Type
+
+'Logical-structure element (see §10.7 PDF 1.7)
+Type StructElement
+    TypeName  As String           '/P, /Span, /H1, …'
+    Attributes As Object          'Dictionary
+    Children  As Collection       'Nested StructElement
+    TextRefs  As Collection       'Indices into TextFragment array
+End Type
+
+
 Enum PDF_ValueType
     PDF_Null = 0
     PDF_Name
@@ -25,6 +60,9 @@ Enum PDF_ValueType
     PDF_EndOfDictionary
     PDF_EndOfStream
     PDF_EndOfObject
+    
+    ' not a pdfValueType per se, but logically one in a content stream
+    PDF_Operator = 128  ' high bit of low byte set flags operator, high byte is PdfTextOp
 End Enum
 
 

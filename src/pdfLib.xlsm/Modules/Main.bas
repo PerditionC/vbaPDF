@@ -45,8 +45,7 @@ Public Sub CombinePDFs(ByRef sourceFiles() As String, ByRef outFile As String)
         Debug.Print "Loading file " & ndx + 1 & " - " & sourceFiles(ndx)
         Application.StatusBar = ndx + 1 & " - " & sourceFiles(ndx)
         'loadPdf sourceFiles(ndx), trailer, xrefTable, info, root, pdfObjs
-        pdfDoc.loadPdf sourceFiles(ndx)
-        pdfDoc.parsePdf
+        pdfDoc.openPdf sourceFiles(ndx)
         
         ' adjust obj id's so no conflict with previously stored ones
         baseId = combinedPdfDoc.nextObjId

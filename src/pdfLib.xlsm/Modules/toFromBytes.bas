@@ -125,8 +125,11 @@ Sub GetAsBytes(ByRef bytes() As Byte, ByRef offset As Long, ByRef word() As Byte
         Select Case bytes(i)
             Case 32, 10, 13, 9, 12 ' " " \n \r \t \f
                 Exit For
-            Case 47, 40, 41, 91, 93 ' / ( ) [ ]
-                If i <> offset Then Exit For   ' if this is first character, then consider it part of same word not starting new word
+            Case 47, 40, 91 ' / ( [
+                If i <> offset Then Exit For   ' if this is not first character, then consider it start of a new word (but if 1st character don't consider as terminating word)
+            Case 41, 93 ' ) ]
+                If i = offset Then i = i + 1 ' ensure at least 1 character is returned if all by itself  R] vs R ]
+                Exit For   ' always marks end of a token
             Case 60, 62 ' < or <<, > or >>
                 ' is this first character and thus part of word or is this ending a word?
                 If i = offset Then
