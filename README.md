@@ -31,7 +31,8 @@ If pdf.OpenPdf("C:\path\to\input.pdf") Then
 End If
 ```
 
-See [USAGE.md](USAGE.md) for more examples.
+See [USAGE.md](USAGE.md) for more examples
+and [API.md](API.md) for detailed function descriptions.
 
 ---
 
