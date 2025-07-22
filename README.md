@@ -1,7 +1,7 @@
 vbaPDF [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ======
 
-**vbaPDF** is a pure VBA library for simple modification of PDF (Portable Document Format) files (read, combine or modify, and write) with **no external ibraries required**.
+**vbaPDF** is a pure VBA library for simple modification of PDF (Portable Document Format) files (read, combine or modify, and write) with **no external libraries required**.
 
 ---
 
