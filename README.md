@@ -59,7 +59,7 @@ See original source for updates and bugfixes: https://github.com/cristianbuse
 
 ## License
 
-MIT License. Some code imported from Cristian Buse's [VBA-FastDictionary](https://github.com/cristianbuse/VBA-FastDictionary) (MIT) and [ExcelZip](https://github.com/cristianbuse/ExcelZip) (MIT). Remaining code is U.S. Public Domain or CC0 equivalent.
+MIT License. Some code imported from Cristian Buse's [VBA-FastDictionary](https://github.com/cristianbuse/VBA-FastDictionary) and related source (MIT). Remaining code is U.S. Public Domain or CC0 equivalent.
 
 ---
 
