@@ -16,6 +16,8 @@ Public stream_data As pdfValue ' PDF_StreamData
 ' stream data may be compressed, on first access we to uncompressed data we decompress and cache results
 Private m_udata() As Byte
 Private decompressed As Boolean
+' first time we extract embedded reference table, but use cache'd version on future loadObject calls
+Public embXRefTable As Dictionary
 
 
 ' returns size of data(), but warns if differs from value of meta /Length property
@@ -196,10 +198,12 @@ End Sub
 Public Sub Class_Initialize()
     Set stream_meta = New pdfValue
     stream_meta.valueType = PDF_ValueType.PDF_Null
+    Set embXRefTable = Nothing  ' indicates not yet loaded
 End Sub
 
 Public Sub Class_Terminate()
     Set stream_meta = Nothing
     Set stream_data = Nothing
     Erase m_udata
+    Set embXRefTable = Nothing
 End Sub

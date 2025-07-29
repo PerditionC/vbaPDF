@@ -1025,7 +1025,7 @@ Public Function loadPdf(ByVal pdfFilename As String) As Boolean
     ' root obj of PDF
     Set rootCatalog = GetRootObject(content, trailer, xrefTable)
     Debug.Print BytesToString(rootCatalog.serialize())
-    objectCache.Add rootCatalog.id, rootCatalog
+    'If Not objectCache.Exists(rootCatalog.ID) Then objectCache.Add rootCatalog.ID, rootCatalog
     
     loadPdf = True ' success
     Exit Function
@@ -1507,7 +1507,7 @@ Private Function GetValueType(ByRef bytes() As Byte, ByVal offset As Long, Optio
             
         Case Else
             GetValueType = PDF_ValueType.PDF_Null
-            Stop ' error! unexpected value
+            'Stop ' error! unexpected value
     End Select
     
     Exit Function

@@ -15,17 +15,53 @@ Public Enum PdfTextOp
     opT_D = 7           ' TD Move text position and set leading
     opTm = 8            ' Tm Set text matrix
     opTStar = 9         ' T* Move to start of next line
+    
+    opTextObjectBegin   ' BT
+    opTextObjectEnd     ' ET
 End Enum
+
+
+Type Rectangle
+    Left As Double
+    Bottom As Double
+    Right As Double
+    Top As Double
+End Type
+
+Type FontState
+    FontName  As String
+    FontSize  As Double
+    IsBold    As Boolean
+    IsItalic  As Boolean
+End Type
+
+Type TextState
+    Font As FontState
+    TextMatrix(0 To 5) As Double        'Current text matrix [a b c d e f]
+    LineMatrix(0 To 5) As Double        'Text line matrix
+    CTM(0 To 5) As Double               'Current transformation matrix
+    CharSpacing As Double               'Tc
+    WordSpacing As Double               'Tw
+    HorizontalScaling As Double         'Tz (as percentage)
+    Leading As Double                   'TL
+    TextRise As Double                  'Ts
+End Type
 
 'Represents a visible text run with position & styling
 Type TextFragment
     text      As String
-    x         As Double           'User-space coordinates
-    Y         As Double
-    fontName  As String
-    fontSize  As Double
-    IsBold    As Boolean
-    IsItalic  As Boolean
+    x         As Double         ' User-space coordinates
+    y         As Double
+    state     As TextState
+    BoundingBox As Rectangle    ' of just this chunk of text, user-space coordinates
+End Type
+
+'Represents a chunk of text (quasi paragraph)
+Type TextBlock
+    text As String
+    BoundingBox As Rectangle    ' of all Fragments
+    StartState As TextState
+    Fragments() As TextFragment ' Collection of TextFragment
 End Type
 
 'Logical-structure element (see §10.7 PDF 1.7)

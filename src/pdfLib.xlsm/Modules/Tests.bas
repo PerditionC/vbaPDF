@@ -4,12 +4,17 @@ Option Explicit
 
 
 Sub TestReadingText()
-    Const basedir As String = "C:\Users\jeremyd\Downloads\pdf-association.pdf20examples\"
+    Const basedir As String = "C:\Users\jeremyd\Downloads\"
+    'Const fname As String = "pdf-association.pdf20examples\pdf20-utf8-test.pdf"
+    Const fname As String = "weird_spaces.pdf"
     Dim pdfDoc As pdfDocument
-    Set pdfDoc = pdfDocument.pdfDocument(basedir & "pdf20-utf8-test.pdf")
+    Set pdfDoc = pdfDocument.pdfDocument(basedir & fname)
     Dim text As String
     text = pdfDoc.GetDocumentText()
     Debug.Print text
+    Dim uf As UserForm2: Set uf = New UserForm2
+    uf.Label1.Caption = pdfDoc.Title & vbNewLine & text
+    uf.Show
 End Sub
 
 Sub TestBookmarkEditor()
